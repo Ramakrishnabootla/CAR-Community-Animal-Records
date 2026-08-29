@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CAR - Community Animal Records</title>
+  <?!= include('frontend/styles'); ?>
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="container">
+      <div class="nav-brand">
+        <img src="https://ssl.gstatic.com/docs/common/product/forms_app_icon1.png" alt="CAR Logo" class="logo">
+        <span>Community Animal Records</span>
+      </div>
+      <div class="nav-links">
+        <a href="#home" onclick="showPage('home')">How it works</a>
+        <a href="#search" onclick="showPage('search')">Browse records</a>
+        <button class="btn-primary" onclick="showPage('create')">+ Add a record</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page: Home -->
+  <div id="page-home" class="page active">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container hero-content">
+        <div class="hero-text">
+          <p class="hero-label">IDENTITY · HISTORY · EVIDENCE</p>
+          <h1>Every life has a<br>history.<br><strong>CAR brings it<br>together.</strong></h1>
+          <p class="hero-desc">One reliable place to find their records and see their history grow over time.</p>
+        </div>
+        <div class="hero-image">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Crect fill='%23f0f8f5' width='400' height='400'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='24' fill='%232D7A5F'%3ECAR Illustration%3C/text%3E%3C/svg%3E" alt="Illustration">
+        </div>
+      </div>
+    </section>
+
+    <!-- The Gap Section -->
+    <section class="section-gap">
+      <div class="container">
+        <div class="gap-content">
+          <div class="gap-text">
+            <h3 class="section-label">THE GAP</h3>
+            <h2>What do we already know about them?</h2>
+          </div>
+          <div class="gap-desc">
+            <p>Were they already vaccinated? Have they been ill before? Did they move in recently? Have they had surgery? Were they lost, found or abandoned? Are they a rare or fading native type?</p>
+            <p style="margin-top: 16px; font-weight: 500;">Information about community animals exists — but it is scattered across people, organizations, messages, photographs and records.</p>
+            <p style="margin-top: 16px; font-weight: 600; color: #2D7A5F;">CAR connects these fragments to one animal and builds a continuing history over time.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it Works -->
+    <section class="section-dark">
+      <div class="container">
+        <h3 class="section-label-light">HOW IT WORKS · THE IDEA</h3>
+        <h2 class="section-title-light">One animal. One history.<br>Contributed by many.</h2>
+        <div class="steps-grid">
+          <div class="step-card">
+            <div class="step-num">01</div>
+            <h4>Create a profile</h4>
+            <p>Create a profile for an animal you take care of or know of.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">02</div>
+            <h4>Find before adding</h4>
+            <p>Or search for an existing record.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">03</div>
+            <h4>Add an event</h4>
+            <p>Add updates with a photo of recent where available.</p>
+          </div>
+          <div class="step-card">
+            <div class="step-num">04</div>
+            <h4>Build community</h4>
+            <p>Every update builds its history.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Page: Search -->
+  <div id="page-search" class="page">
+    <section class="section-search">
+      <div class="container">
+        <h3 class="section-label">SEARCH</h3>
+        <h2>Find a record</h2>
+        <div class="search-bar-container">
+          <input type="text" id="searchInput" placeholder="Search by animal, area or record ID" class="search-input">
+          <button class="btn-primary" onclick="handleSearch()">Search</button>
+        </div>
+        <div id="browseProfiles" class="search-results profile-card-list"></div>
+        <div class="stats-row" id="statsDisplay">
+          <div class="stat-item">
+            <div class="stat-number" id="statAnimals">0</div>
+            <div class="stat-label">sample animals</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number" id="statEvents">0</div>
+            <div class="stat-label">recorded events</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number" id="statAreas">0</div>
+            <div class="stat-label">neighborhoods</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number" id="statLinked">0%</div>
+            <div class="stat-label">evidence listed</div>
+          </div>
+        </div>
+        <div id="searchResults" class="search-results"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Page: Create Profile -->
+  <div id="page-create" class="page">
+    <section class="section-create">
+      <div class="container">
+        <h2>Add to CAR</h2>
+        <p class="create-subtitle">Ready to create a profile? Create an animal profile for someone you take care of or know of.</p>
+
+        <form id="profileForm" class="profile-form">
+          <!-- Contributor Block -->
+          <div class="form-section">
+            <h3>Your Information</h3>
+            <div class="form-group">
+              <label>Your Name <span class="required">*</span></label>
+              <input type="text" name="contributorName" required>
+            </div>
+            <div class="form-group">
+              <label>Mobile Number <span class="required">*</span></label>
+              <input type="tel" name="contributorMobile" required placeholder="+91">
+            </div>
+            <div class="form-group">
+              <label>Email (Optional)</label>
+              <input type="email" name="contributorEmail">
+            </div>
+          </div>
+
+          <!-- Animal Block -->
+          <div class="form-section">
+            <h3>Animal Information</h3>
+            <div class="form-group">
+              <label>Animal Type <span class="required">*</span></label>
+              <select name="animalType" required onchange="handleAnimalTypeChange(this.value)">
+                <option value="">-- Select --</option>
+                <option value="Dog">Dog</option>
+                <option value="Cat">Cat</option>
+                <option value="Bird">Bird</option>
+                <option value="Cattle">Cattle</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group conditional-field" id="fieldNativeDogType" style="display:none;">
+              <label>Native breed (if known)</label>
+              <select name="nativeDogType" onchange="handleNativeBreedChange(this.value)">
+                <option value="">-- Select --</option>
+                <option>Alangu Mastiff (Rare)</option><option>Bakharwal / Kashmiri Sheepdog (Rare)</option><option>Dhangari (Rare)</option><option>Dhole (Rare)</option><option>Himalayan Mastiff (Rare)</option><option>Jonangi (Rare)</option><option>Kaikadi (Rare)</option><option>Pashmi Hound (Rare)</option><option>Royal Rampur Greyhound (Rare)</option><option>Soneri (Rare)</option><option>Soriala / Sarail Greyhound (Rare)</option><option>Taji (Rare)</option><option>Alaknoori</option><option>Alunku Tanjore</option><option>Bully Kutta</option><option>Chippiparai</option><option>Gaddi Kutta</option><option>Gull Dong</option><option>Gull Terrier</option><option>Indian Pariah Dog (INDog)</option><option>Indian Spitz</option><option>Kanni</option><option>Kattakal</option><option>Kombai</option><option>Mahratta</option><option>Malayeri</option><option>Mudhol Hound</option><option>Pandikona</option><option>Rajapalayam</option><option>Ramanathapuram Mandai</option><option>Sengottai</option><option>Sinhala Hound</option><option>Tangkhul</option><option>Vikhan</option><option>Vikhan Sheepdog</option><option>Kumaon Mastiff</option><option>Northern Bhutia / Bhotia</option><option>Vaghari Hound</option><option>Don't Know</option><option>Other</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Breed type <span class="required">*</span></label><select name="breedType" required onchange="handleBreedTypeChange(this.value)"><option value="">-- Select --</option><option>Non Native Breed</option><option>Mixed [Indie + non native]</option><option>Don't know</option><option>Indie / Native</option></select></div>
+            <div class="form-group conditional-field" id="fieldBreedOther" style="display:none;"><label>If Other, please add breed details</label><input type="text" name="breedOtherDetails"></div>
+            <div class="form-group">
+              <label>Animal name (if known)</label>
+              <input type="text" name="animalName" placeholder="Leave blank if unknown">
+            </div>
+            <div class="form-group">
+              <label>Sex <span class="required">*</span></label>
+              <select name="sex" required>
+                <option value="">-- Select --</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Approximate Age <span class="required">*</span></label>
+              <select name="age" required>
+                <option value="">-- Select --</option>
+                <option value="Puppy/Kitten">Puppy/Kitten</option>
+                <option value="Adult">Adult</option>
+                <option value="Senior">Senior</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Does anyone regularly take care of this animal? <span class="required">*</span></label>
+              <select name="caregiverAnswer" required onchange="handleCaregiverChange(this.value)">
+                <option value="">-- Select --</option><option>Yes</option><option>No</option><option>Don't know</option>
+              </select>
+            </div>
+            <div class="form-group conditional-field" id="fieldCaregiverWho" style="display:none;"><label>Who takes care of it?</label><select name="caregiverType" onchange="handleCaregiverTypeChange(this.value)"><option value="">-- Select --</option><option>Individual</option><option>Animal care group in the community</option><option>Volunteer / NGO</option><option>Multiple people</option><option>Other</option></select></div>
+            <div class="form-group conditional-field" id="fieldCaregiverOther" style="display:none;"><label>If Other, please tell us who</label><input type="text" name="caregiverOtherDetails"></div>
+            <div class="form-group conditional-field" id="fieldCareProvided" style="display:none;"><label>What type of care is provided?</label><select name="careProvided" onchange="handleCareTypeChange(this.value)"><option value="">-- Select --</option><option>Food and water</option><option>Shelter</option><option>Vaccination</option><option>Sterilization</option><option>Medical care</option><option>Other</option></select></div>
+            <div class="form-group conditional-field" id="fieldCareOther" style="display:none;"><label>If Other, please describe the care</label><input type="text" name="careOtherDetails"></div>
+          </div>
+
+          <!-- Location Block -->
+          <div class="form-section">
+            <h3>Location</h3>
+            <div class="form-group">
+              <label>Area / locality <span class="required">*</span></label>
+              <input type="text" name="area" required placeholder="e.g., Banjara Hills">
+            </div>
+            <div class="form-group"><label>Where is this animal usually found?</label><select name="usualLocationType"><option value="">-- Select --</option><option>Residential area / colony</option><option>Campus / institution</option><option>Animal shelter / rescue facility</option><option>Commercial / market area</option><option>Food stall / restaurant area</option><option>Industrial / worksite</option><option>Transport hub</option><option>Park / public space</option><option>Vacant land / construction site</option><option>Other</option></select></div>
+            <div class="form-group"><label>State / UT</label><input type="text" name="state"></div>
+            <div class="form-group"><label>City</label><input type="text" name="city"></div>
+            <div class="form-group"><label>Seen regularly in the area? <span class="required">*</span></label><select name="seenRegularly" required><option value="">-- Select --</option><option>Yes. Seen daily</option><option>Yes. Seen often</option><option>Yes. Sometimes</option><option>Seems to have moved in recently</option><option>Stable pack member</option><option>Seems abandoned</option><option>Seems relocated</option><option>Don't know</option></select></div>
+            <div class="form-group">
+              <label>Landmark (Optional)</label>
+              <input type="text" name="landmark" placeholder="e.g., Near Apollo Pharmacy">
+            </div>
+            <div class="form-group">
+              <label>GPS Coordinates (Optional)</label>
+              <input type="text" name="gpsLocation" placeholder="Paste Google Maps pin or coordinates">
+            </div>
+          </div>
+
+          <!-- Baseline Status Block -->
+          <div class="form-section">
+            <h3>Animal status</h3>
+            <div class="form-group">
+              <label>Current Health Condition <span class="required">*</span></label>
+              <select name="healthStatus" required>
+                <option value="Unknown">Unknown</option>
+                <option value="Healthy">Healthy</option>
+                <option value="Injured">Injured</option>
+                <option value="Sick">Sick</option>
+                <option value="Under Treatment">Under Treatment</option><option value="Old / Weak">Old / Weak</option><option value="Needs Medical Attention">Needs Medical Attention</option><option value="Pregnant">Pregnant</option><option value="Nursing">Nursing</option><option value="Underweight">Underweight</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Vaccination Status</label>
+              <select name="vaccinationStatus">
+                <option value="Unknown">Unknown</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Behaviour <span class="required">*</span></label><select name="behavior" required><option value="">-- Select --</option><option>Friendly</option><option>Shy</option><option>Loner</option><option>Neutral</option><option>Protective</option><option>Reactive</option><option>Scared</option><option>Hides</option><option>Doesn't allow touching</option><option>Doesn't come near</option><option>Friendly but keeps distance</option></select></div>
+            <div class="form-group"><label>ABC Status</label><select name="abcStatus"><option value="">-- Select --</option><option>Completed independently / by volunteer</option><option>Requested for ABC (Municipal / NGO)</option><option>Picked up for ABC</option><option>Returned post ABC</option><option>Don't know</option></select></div>
+            <div class="form-group"><label>ABC Outcome</label><select name="abcOutcome"><option value="">-- Select --</option><option>Recovered normally</option><option>Under observation</option><option>Sick after ABC</option><option>Infection or complication after ABC</option><option>Receiving medical support</option><option>Died</option><option>Euthanized</option><option>Don't know</option></select></div>
+            <div class="form-group"><label>Identification Marks <span class="required">*</span></label><select name="identificationMarks" required><option value="">-- Select --</option><option>Collar</option><option>Tag</option><option>Microchip</option><option>Ear notch</option><option>QR tag (if applicable)</option><option>None visible</option><option>Other</option></select></div>
+            <div class="form-group"><label>If Other, identification details</label><input type="text" name="identificationOtherDetails"></div>
+            <div class="form-group"><label>Any other details you'd like to add?</label><textarea name="additionalDetails" rows="3"></textarea></div>
+            <div class="form-group">
+              <label>Sterilisation Status</label>
+              <select name="sterilisationStatus">
+                <option value="Unknown">Unknown</option>
+                <option value="Sterilised">Sterilised</option>
+                <option value="Unsterilised">Unsterilised</option>
+              </select>
+            </div>
+            <div class="form-group">
+            </div>
+          </div>
+
+          <!-- Media Upload -->
+          <div class="form-section">
+            <h3>Photos/Documents (Optional)</h3>
+            <div class="form-group">
+              <label>Upload Photo or Document</label>
+              <input type="file" id="mediaUpload" accept="image/*,application/pdf" multiple onchange="handleFileSelect(event)">
+              <div id="fileList" class="file-list"></div>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="showPage('home')">Cancel</button>
+            <button type="submit" class="btn-primary">Create Profile</button>
+          </div>
+        </form>
+
+        <div id="formMessage" class="form-message"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Page: Add Event -->
+  <div id="page-event" class="page">
+    <section class="section-create"><div class="container"><h2>Add an event</h2><p class="create-subtitle">Add a new record to an existing CAR profile.</p>
+      <form id="eventForm" class="profile-form">
+        <input type="hidden" name="carProfileId" id="eventCarProfileId">
+        <input type="hidden" name="eventType" id="eventType" value="Vaccination or Preventive Care">
+
+        <div class="form-section">
+          <h3>Event</h3>
+          <div class="event-kind-toggle" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+            <button type="button" class="btn-secondary event-kind-button active" data-event-kind="Vaccination or Preventive Care">Vaccination or Preventive Care</button>
+            <button type="button" class="btn-secondary event-kind-button" data-event-kind="Medical Treatment">Medical Treatment</button>
+            <button type="button" class="btn-secondary event-kind-button" data-event-kind="Sterilization">Sterilization</button>
+          </div>
+        </div>
+
+        <div class="form-section event-detail-panel" data-event-panel="Vaccination or Preventive Care">
+          <h3>Vaccination or Preventive Care</h3>
+          <div class="form-group">
+            <label>Type of Preventive Care <span class="required">*</span></label>
+            <select name="preventiveCareType" required>
+              <option value="">-- Select --</option>
+              <option>ARV Vaccination</option>
+              <option>Core Vaccination</option>
+              <option>Booster Vaccination</option>
+              <option>Deworming</option>
+              <option>Tick / Flea Treatment</option>
+              <option>Preventive Health Check</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>If Other, please add details</label>
+            <input type="text" name="preventiveCareOtherDetails">
+          </div>
+          <div class="form-group">
+            <label>Date Preventive Care Provided</label>
+            <input type="date" name="preventiveCareDate">
+          </div>
+          <div class="form-group">
+            <label>Given by <span class="required">*</span></label>
+            <input type="text" name="preventiveCareGivenBy" required>
+          </div>
+          <div class="form-group">
+            <label>Next Vaccination / Follow-up Due (if known)</label>
+            <input type="date" name="nextFollowUpDate">
+          </div>
+          <div class="form-group">
+            <label>Vaccine / Product Name (if known)</label>
+            <input type="text" name="vaccineProductName">
+          </div>
+        </div>
+
+        <div class="form-section event-detail-panel" data-event-panel="Medical Treatment" style="display:none;">
+          <h3>Medical Treatment</h3>
+          <div class="form-group">
+            <label>Date of treatment <span class="required">*</span></label>
+            <input type="date" name="medicalTreatmentDate" required>
+          </div>
+          <div class="form-group">
+            <label>Current Health Condition</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Healthy"> Healthy</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Injured"> Injured</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Sick"> Sick</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Skin disease"> Skin disease</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Underweight"> Underweight</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Pregnant"> Pregnant</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Nursing"> Nursing</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Old / Weak"> Old / Weak</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Recovering"> Recovering</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Disabled"> Disabled</label>
+              <label><input type="checkbox" name="medicalTreatmentHealthCondition" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Current Behaviour</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Friendly"> Friendly</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Calm"> Calm</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Shy"> Shy</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Timid"> Timid</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Protective"> Protective</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Fearful"> Fearful</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Aggressive"> Aggressive</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Unable to assess"> Unable to assess</label>
+              <label><input type="checkbox" name="medicalTreatmentBehaviour" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Reason for Treatment <span class="required">*</span></label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Injury"> Injury</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Illness"> Illness</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Skin condition"> Skin condition</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Vaccination"> Vaccination</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Tick/flea treatment"> Tick/flea treatment</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Deworming"> Deworming</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Fracture"> Fracture</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Surgery"> Surgery</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Follow-up"> Follow-up</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="General checkup"> General checkup</label>
+              <label><input type="checkbox" name="medicalTreatmentReason" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Treatment Given</label>
+            <textarea name="medicalTreatmentGiven" rows="3"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Treatment Provided By</label>
+            <input type="text" name="medicalTreatmentProvidedBy">
+          </div>
+          <div class="form-group">
+            <label>Does this animal need additional support?</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Follow-up treatment"> Follow-up treatment</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Medication"> Medication</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Foster care"> Foster care</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Rescue"> Rescue</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Financial support"> Financial support</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Transport"> Transport</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Monitoring"> Monitoring</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="No further support needed"> No further support needed</label>
+              <label><input type="checkbox" name="medicalTreatmentSupportNeeded" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Add Medical Record / Prescription / Photos / Video <span class="optional-text">(Optional)</span></label>
+            <input type="file" id="eventMediaUpload" accept="image/*,video/*,application/pdf" multiple onchange="handleEventFileSelect(event)">
+            <div id="eventFileList" class="file-list"></div>
+            <small>Upload up to 5 supported files. Max 10 MB per file.</small>
+          </div>
+          <div class="form-group">
+            <label>Any other details you'd like to add?</label>
+            <textarea name="medicalTreatmentAdditionalDetails" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section event-detail-panel" data-event-panel="Sterilization" style="display:none;">
+          <h3>Sterilization</h3>
+          <div class="form-group">
+            <label>Date Reported</label>
+            <input type="date" name="sterilizationDateReported">
+          </div>
+          <div class="form-group">
+            <label>Current Health Condition</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Healthy"> Healthy</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Injured"> Injured</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Sick"> Sick</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Recovering"> Recovering</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Under Treatment"> Under Treatment</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Old / Weak"> Old / Weak</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Pregnant"> Pregnant</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Nursing"> Nursing</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Underweight"> Underweight</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Don't Know"> Don't Know</label>
+              <label><input type="checkbox" name="sterilizationHealthCondition" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Behaviour following procedure</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Friendly"> Friendly</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Shy"> Shy</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Loner"> Loner</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Neutral"> Neutral</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Protective"> Protective</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Fearful"> Fearful</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Aggressive"> Aggressive</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Doesn't allow touching"> Doesn't allow touching</label>
+              <label><input type="checkbox" name="sterilizationBehaviour" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Vaccinated?</label>
+            <select name="sterilizationVaccinated">
+              <option value="">Choose</option>
+              <option>Yes</option>
+              <option>No</option>
+              <option>Don't Know</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Sterilized?</label>
+            <select name="sterilizationStatus">
+              <option value="">Choose</option>
+              <option>Yes</option>
+              <option>No</option>
+              <option>Don't Know</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Identification Marks</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="Collar"> Collar</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="Tag"> Tag</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="Ear Notch"> Ear Notch</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="QR Tag"> QR Tag</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="Microchip"> Microchip</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="None Visible"> None Visible</label>
+              <label><input type="checkbox" name="sterilizationIdentificationMarks" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>What was done?</label>
+            <div class="checkbox-group">
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Sterilization Surgery"> Sterilization Surgery</label>
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Post-operative Check-up"> Post-operative Check-up</label>
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Ear Notch Check"> Ear Notch Check</label>
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Follow-up Examination"> Follow-up Examination</label>
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Complication Reported"> Complication Reported</label>
+              <label><input type="checkbox" name="sterilizationProcedureActions" value="Other"> Other</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Date Procedure Performed</label>
+            <input type="date" name="sterilizationProcedureDate">
+          </div>
+          <div class="form-group">
+            <label>Performed By</label>
+            <input type="text" name="sterilizationPerformedBy">
+          </div>
+          <div class="form-group">
+            <label>Ear Notch Applied?</label>
+            <select name="sterilizationEarNotchApplied">
+              <option value="">Choose</option>
+              <option>Yes</option>
+              <option>No</option>
+              <option>Not Applicable</option>
+              <option>Don't Know</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Post-operative Recovery Status</label>
+            <select name="sterilizationRecoveryStatus">
+              <option value="">Choose</option>
+              <option>Recovering Well</option>
+              <option>Requires Follow-up</option>
+              <option>Complications Observed</option>
+              <option>Fully Recovered</option>
+              <option>Contracted infection</option>
+              <option>Died</option>
+              <option>Don't Know</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Add Sterilization Certificate / Photos / Supporting Documents <span class="optional-text">(Optional)</span></label>
+            <input type="file" id="sterilizationMediaUpload" accept="image/*,video/*,application/pdf" multiple onchange="handleEventFileSelect(event)">
+            <div id="sterilizationFileList" class="file-list"></div>
+            <small>Upload up to 5 supported files. Max 10 MB per file.</small>
+          </div>
+          <div class="form-group">
+            <label>Any other details you'd like to add?</label>
+            <textarea name="sterilizationAdditionalDetails" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="form-actions"><button type="button" class="btn-secondary" onclick="showPage('profile')">Cancel</button><button type="submit" class="btn-primary">Save Event</button></div>
+      </form><div id="eventMessage" class="form-message"></div>
+    </div></section>
+  </div>
+
+  <!-- Page: Profile View -->
+  <div id="page-profile" class="page">
+    <section class="section-profile">
+      <div class="container">
+        <button class="btn-back" onclick="showPage('search')">← Back to Search</button>
+        <div id="profileDisplay" class="profile-display"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Page: Dedicated Record -->
+  <div id="page-record" class="page">
+    <section class="section-profile">
+      <div class="container">
+        <button class="btn-back" type="button" onclick="showPage('search')">Back to records</button>
+        <div id="recordLoading" class="form-message">Loading record...</div>
+        <div id="recordDisplay" class="profile-display"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+  </div>
+
+  <?!= include('frontend/scripts'); ?>
+</body>
+</html>

@@ -1,0 +1,33 @@
+# clasp
+.clasp.json
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*~
+
+# Environment variables (if any)
+.env
+
+# Test data
+test_data/
+
+# Build artifacts
+dist/
+build/
+
+# Plan files
+plan.md
