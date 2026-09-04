@@ -5,28 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CAR - Community Animal Records</title>
   <?!= include('frontend/styles'); ?>
-  <script>
-    /* Local File Preview Fallback (loads styles & scripts when viewing index.html locally in browser) */
-    if (window.location.protocol === 'file:' || typeof google === 'undefined') {
-      fetch('./styles.html').then(r => r.text()).then(html => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const style = doc.querySelector('style');
-        if (style) document.head.appendChild(style);
-      }).catch(() => {});
-
-      fetch('./scripts.html').then(r => r.text()).then(html => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const script = doc.querySelector('script');
-        if (script) {
-          const newScript = document.createElement('script');
-          newScript.textContent = script.textContent;
-          document.body.appendChild(newScript);
-        }
-      }).catch(() => {});
-    }
-  </script>
 </head>
 <body>
   <!-- Navigation Bar -->
