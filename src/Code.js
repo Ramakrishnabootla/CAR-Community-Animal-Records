@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - Main Entry Point
  * Google Apps Script Web App
  */
@@ -23,9 +23,16 @@ const CONFIG = {
  * Serves the HTML interface
  */
 function doGet(e) {
-  return HtmlService.createTemplateFromFile('frontend/index')
+  let template;
+  try {
+    template = HtmlService.createTemplateFromFile('frontend/index');
+  } catch (err) {
+    template = HtmlService.createTemplateFromFile('index');
+  }
+  return template
       .evaluate()
       .setTitle('CAR - Community Animal Records')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -33,7 +40,17 @@ function doGet(e) {
  * Include other HTML files (for styles and scripts)
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  try {
+    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  } catch (err1) {
+    try {
+      const altName = filename.includes('/') ? filename.split('/').pop() : 'frontend/' + filename;
+      return HtmlService.createHtmlOutputFromFile(altName).getContent();
+    } catch (err2) {
+      Logger.log('Error including file ' + filename + ': ' + err2.toString());
+      return '<!-- Failed to include ' + filename + ' -->';
+    }
+  }
 }
 
 /**
@@ -253,7 +270,16 @@ function migrateSheetToSchema(sheet, sheetName) {
 
 function normalizePlainTextValue(value, header, sheetName) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return "'" + String(value);
+  // BUG-15 FIX: Date objects should never get the apostrophe prefix. Only convert to ISO string.
+  if (value instanceof Date) return value.toISOString();
+  // Only prepend apostrophe for numeric values that are ID/phone fields, not all numbers.
+  if (typeof value === 'number') {
+    const normalizedHeader = normalizeHeader(header);
+    if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
+      return "'" + String(value);
+    }
+    return String(value); // Return plain string for all other numbers (e.g. scores, counts)
+  }
   const text = String(value).trim();
   if (!text) return '';
   const normalizedHeader = normalizeHeader(header);

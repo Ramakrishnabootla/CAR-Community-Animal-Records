@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - Search Module
  * Handles exact Profile retrieval, Search-Before-Create with Locality & Attribute matching,
  * and Admin Hold Queue management.
@@ -97,7 +97,7 @@ function apiSearchProfile(carProfileID) {
       animalType: row[3],
       mediaType: row[4],
       driveFileId: row[5],
-      driveFileURL: row[6],
+      driveFileURL: getDirectDriveImageUrl(row[5], row[6]),
       fileName: row[7],
       visibility: row[8] || 'Restricted',
       source: row[9] || 'Self-reported',
@@ -139,6 +139,25 @@ function apiSearchProfile(carProfileID) {
   }
 }
 
+function getDirectDriveImageUrl(fileId, fileUrl) {
+  if (fileId && String(fileId).trim().length > 5) {
+    return 'https://lh3.googleusercontent.com/d/' + String(fileId).trim();
+  }
+  const url = String(fileUrl || '').trim();
+  if (!url) return '';
+  if (url.startsWith('data:image')) return url;
+  let extractedId = url;
+  if (url.includes('id=')) {
+    extractedId = url.split('id=')[1].split('&')[0];
+  } else if (url.includes('/d/')) {
+    extractedId = url.split('/d/')[1].split('/')[0];
+  }
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(extractedId)) {
+    return 'https://lh3.googleusercontent.com/d/' + extractedId;
+  }
+  return url;
+}
+
 /**
  * Search Before Create (W2.1): Locality pre-filter & Match score calculation
  * Scopes by AnimalType & Area, scores relevance (Area 30%, Marks 30%, Sex 15%, Breed 15%, Name 10%)
@@ -178,8 +197,8 @@ function apiSearchBeforeCreate(query) {
     // Map media by carProfileId (first image)
     const mediaMap = {};
     mediaRows.forEach(row => {
-      if (!mediaMap[row[1]] && row[6]) {
-        mediaMap[row[1]] = row[6];
+      if (!mediaMap[row[1]]) {
+        mediaMap[row[1]] = getDirectDriveImageUrl(row[5], row[6]);
       }
     });
 
@@ -233,7 +252,8 @@ function apiSearchBeforeCreate(query) {
         score += Math.round(nameSim * 10);
       }
 
-      if (score >= 35) {
+      // BUG-08 FIX: Threshold is 40 per Week 2 plan (was incorrectly 35)
+      if (score >= 40) {
         candidates.push({
           carProfileId: cCarId,
           animalName: cName,
@@ -362,7 +382,10 @@ function tryParseJSON(str) {
 }
 
 function clientValue(value) {
-  return value instanceof Date ? value.toISOString() : value;
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return String(value);
+  return value;
 }
 
 function apiSearchRecords(query) {
@@ -370,21 +393,41 @@ function apiSearchRecords(query) {
     const cleanQuery = String(query || '').trim().toLowerCase();
     if (!cleanQuery) return { success: false, error: 'Enter a CAR Profile ID, animal name, or area' };
 
-    const rows = getAnimalRows();
-    const matches = rows.filter(row => {
-      return String(row[0] || '').toLowerCase().includes(cleanQuery) ||
-        String(row[1] || '').toLowerCase().includes(cleanQuery) ||
-        String(row[2] || '').toLowerCase().includes(cleanQuery);
+    const animalsSheet = getSheet(CONFIG.sheetNames.animals);
+    const animalRows = animalsSheet.getDataRange().getValues().slice(1);
+    const locationsSheet = getSheet(CONFIG.sheetNames.locations);
+    const locationRows = locationsSheet.getDataRange().getValues().slice(1);
+
+    const locationMap = {};
+    locationRows.forEach(r => {
+      locationMap[r[0]] = { area: r[4], city: r[3], landmark: r[5] };
+    });
+
+    const matches = [];
+
+    animalRows.forEach(row => {
+      const carId = String(row[0] || '').replace(/^'/, '').trim();
+      const name = String(row[1] || '').trim();
+      const type = String(row[2] || '').trim();
+      const breed = String(row[3] || '').trim();
+      const loc = locationMap[row[14]] || { area: '', city: '', landmark: '' };
+
+      const fullSearchableText = `${carId} ${name} ${type} ${breed} ${loc.area} ${loc.city} ${loc.landmark}`.toLowerCase();
+
+      if (fullSearchableText.includes(cleanQuery)) {
+        matches.push({
+          carProfileId: carId,
+          animalName: name,
+          animalType: type,
+          area: loc.area || 'Unknown'
+        });
+      }
     });
 
     return {
       success: true,
       found: matches.length > 0,
-      profiles: matches.map(row => ({
-        carProfileId: row[0],
-        animalName: row[1],
-        animalType: row[2]
-      }))
+      profiles: matches
     };
   } catch (err) {
     Logger.log('Error searching records: ' + err.toString());
@@ -416,32 +459,16 @@ function apiListProfiles() {
 }
 
 function getAnimalRows() {
-  const result = [];
+  // BUG-06 FIX: Only read from the designated Animals sheet to prevent duplicate rows
+  // (previous version also read Sheet[0] which could double-count when Animals is Sheet[0])
   const animalsSheet = getSheet(CONFIG.sheetNames.animals);
-  const animalsRows = animalsSheet.getDataRange().getValues();
-  result.push(...animalsRows.slice(1));
-
-  const firstSheet = getSpreadsheet().getSheets()[0];
-  if (firstSheet.getName() !== CONFIG.sheetNames.animals) {
-    const firstRows = firstSheet.getDataRange().getValues();
-    if (firstRows.length > 1 && firstRows[0].some(header => String(header).toLowerCase().includes('car') && String(header).toLowerCase().includes('profile'))) {
-      result.push(...firstRows.slice(1));
-    }
-  }
-  return result;
+  return animalsSheet.getDataRange().getValues().slice(1);
 }
 
 function findAnimalRowByProfileId(profileId) {
-  const animalsRow = findRowByID(CONFIG.sheetNames.animals, 0, profileId);
-  if (animalsRow) return animalsRow;
-
-  const firstSheet = getSpreadsheet().getSheets()[0];
-  if (firstSheet.getName() === CONFIG.sheetNames.animals) return null;
-  const rows = firstSheet.getDataRange().getValues();
-  for (let index = 1; index < rows.length; index++) {
-    if (String(rows[index][0]).trim() === profileId) return rows[index];
-  }
-  return null;
+  // BUG-05 FIX: Only search the Animals sheet. Removed the dangerous fallback to
+  // Sheet[0] which could return rows from Contributors/Locations if Animals is not first.
+  return findRowByID(CONFIG.sheetNames.animals, 0, profileId) || null;
 }
 
 function getProfileArea(locationId) {
@@ -452,9 +479,11 @@ function getProfileArea(locationId) {
 function findRowByID(sheetName, colIndex, idSearch) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
+  const cleanSearch = String(idSearch || '').trim().replace(/^'/, '').toLowerCase();
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][colIndex]).trim() === String(idSearch).trim()) {
+    const cleanCell = String(data[i][colIndex] || '').trim().replace(/^'/, '').toLowerCase();
+    if (cleanCell === cleanSearch) {
       return data[i];
     }
   }
@@ -466,9 +495,11 @@ function findAllRowsByID(sheetName, colIndex, idSearch) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
   const results = [];
+  const cleanSearch = String(idSearch || '').trim().replace(/^'/, '').toLowerCase();
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][colIndex]).trim() === String(idSearch).trim()) {
+    const cleanCell = String(data[i][colIndex] || '').trim().replace(/^'/, '').toLowerCase();
+    if (cleanCell === cleanSearch) {
       results.push(data[i]);
     }
   }

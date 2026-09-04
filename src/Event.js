@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - Event Module
  * Adds immutable event records to an existing animal profile and logs traceable history corrections.
  */

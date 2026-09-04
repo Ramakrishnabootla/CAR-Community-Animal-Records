@@ -6,8 +6,8 @@
   <title>CAR - Community Animal Records</title>
   <?!= include('frontend/styles'); ?>
   <script>
-    /* Local File Preview Fallback (loads styles & scripts when viewing index.html locally in browser) */
-    if (window.location.protocol === 'file:' || typeof google === 'undefined') {
+    /* Local File Preview Fallback (only runs when viewing index.html directly from local disk or localhost) */
+    if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       fetch('./styles.html').then(r => r.text()).then(html => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
@@ -51,7 +51,7 @@
     <section class="hero">
       <div class="container hero-content">
         <div class="hero-text">
-          <p class="hero-label">IDENTITY · HISTORY · EVIDENCE</p>
+          <p class="hero-label">IDENTITY &#183; HISTORY &#183; EVIDENCE</p>
           <h1>Every life has a<br>history.<br><strong>CAR brings it<br>together.</strong></h1>
           <p class="hero-desc">One reliable place to find their records and see their history grow over time.</p>
         </div>
@@ -71,7 +71,7 @@
           </div>
           <div class="gap-desc">
             <p>Were they already vaccinated? Have they been ill before? Did they move in recently? Have they had surgery? Were they lost, found or abandoned? Are they a rare or fading native type?</p>
-            <p style="margin-top: 16px; font-weight: 500;">Information about community animals exists — but it is scattered across people, organizations, messages, photographs and records.</p>
+            <p style="margin-top: 16px; font-weight: 500;">Information about community animals exists &#8212; but it is scattered across people, organizations, messages, photographs and records.</p>
             <p style="margin-top: 16px; font-weight: 600; color: #2D7A5F;">CAR connects these fragments to one animal and builds a continuing history over time.</p>
           </div>
         </div>
@@ -81,7 +81,7 @@
     <!-- How it Works -->
     <section class="section-dark">
       <div class="container">
-        <h3 class="section-label-light">HOW IT WORKS · THE IDEA</h3>
+        <h3 class="section-label-light">HOW IT WORKS &#183; THE IDEA</h3>
         <h2 class="section-title-light">One animal. One history.<br>Contributed by many.</h2>
         <div class="steps-grid">
           <div class="step-card">
@@ -150,7 +150,132 @@
         <h2>Add to CAR</h2>
         <p class="create-subtitle">Ready to create a profile? Create an animal profile for someone you take care of or know of.</p>
 
-        <form id="profileForm" class="profile-form">
+        <!-- Search-Before-Create Step 1 Container -->
+        <div class="sbc-container" style="background:#f4f9f6; border:2px solid #2D7A5F; padding:20px; border-radius:12px; margin-bottom:28px; box-shadow:0 4px 12px rgba(45,122,95,0.08);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; color:#2D7A5F; font-size:20px; font-weight:700;">&#55357;&#56589; Step 1: Search Existing Records First</h3>
+            <span style="background:#E6F4EA; color:#137333; font-size:12px; padding:4px 12px; border-radius:12px; font-weight:600;">Search-Before-Create Protocol</span>
+          </div>
+          <p style="font-size:14px; color:#555; margin-bottom:16px;">
+            Enter the animal's basic details to check if a profile already exists in your area before submitting a new record.
+          </p>
+
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+            <!-- Animal Type -->
+            <div class="form-group" style="margin:0;">
+              <label>Animal Type <span class="required">*</span></label>
+              <select id="sbcAnimalType" onchange="handleSbcAnimalTypeChange(this.value)">
+                <option value="">-- Select Type --</option>
+                <option value="Dog">Dog</option>
+                <option value="Cat">Cat</option>
+                <option value="Bird">Bird</option>
+                <option value="Cattle">Cattle</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <!-- Area / Locality -->
+            <div class="form-group" style="margin:0;">
+              <label>Area / Locality <span class="required">*</span></label>
+              <input type="text" id="sbcArea" placeholder="e.g., Banjara Hills">
+            </div>
+
+            <!-- Animal Name (if known) -->
+            <div class="form-group" style="margin:0;">
+              <label>Animal Name (if known)</label>
+              <input type="text" id="sbcAnimalName" placeholder="e.g., Bruno">
+            </div>
+
+            <!-- Gender / Sex -->
+            <div class="form-group" style="margin:0;">
+              <label>Gender / Sex</label>
+              <select id="sbcSex">
+                <option value="Unknown">Unknown</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+
+            <!-- Breed Type -->
+            <div class="form-group" style="margin:0;">
+              <label>Breed Type</label>
+              <select id="sbcBreedType">
+                <option value="">-- Select Breed --</option>
+                <option value="Indie / Native">Indie / Native</option>
+                <option value="Non Native Breed">Non Native Breed</option>
+                <option value="Mixed [Indie + non native]">Mixed [Indie + non native]</option>
+                <option value="Don't know">Don't know</option>
+              </select>
+            </div>
+
+            <!-- Native Breed (if applicable) -->
+            <div class="form-group conditional-field" id="sbcFieldNativeDog" style="display:none; margin:0;">
+              <label>Native Breed (if known)</label>
+              <select id="sbcNativeDogType">
+                <option value="">-- Select Native Breed --</option>
+                <option>Indian Pariah Dog (INDog)</option>
+                <option>Rajapalayam</option>
+                <option>Mudhol Hound</option>
+                <option>Kombai</option>
+                <option>Chippiparai</option>
+                <option>Gaddi Kutta</option>
+                <option>Bakharwal / Kashmiri Sheepdog (Rare)</option>
+                <option>Jonangi (Rare)</option>
+                <option>Kanni</option>
+                <option>Pandikona</option>
+                <option>Alangu Mastiff (Rare)</option>
+                <option>Don't Know</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <!-- Caregiver Type -->
+            <div class="form-group" style="margin:0;">
+              <label>Who takes care of it?</label>
+              <select id="sbcCaregiverType">
+                <option value="">-- Select Caregiver --</option>
+                <option value="Individual">Individual</option>
+                <option value="Animal care group in the community">Animal care group in the community</option>
+                <option value="Volunteer / NGO">Volunteer / NGO</option>
+                <option value="Multiple people">Multiple people</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <!-- Identification Marks -->
+            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+              <label>Identification Marks (Description for matching)</label>
+              <input type="text" id="sbcIdentificationMarks" placeholder="e.g., Red collar, notched left ear, white right paw">
+            </div>
+
+            <!-- GPS Location Capture -->
+            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+              <label>GPS Location</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="sbcGpsCoordinates" placeholder="Latitude, Longitude (or click capture)" style="flex:1;">
+                <button type="button" class="btn-secondary btn-gps" onclick="getSbcGPSLocation()">&#55357;&#56525; Capture Location</button>
+              </div>
+            </div>
+
+            <!-- Photo Upload for Side-by-Side Verification -->
+            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+              <label>Animal Photo <span class="optional-text">(Used for Side-by-Side Verification Cards)</span></label>
+              <input type="file" id="sbcPhotoInput" accept="image/*" onchange="handleSbcPhotoSelect(event)">
+              <div id="sbcPhotoPreview" style="margin-top:8px;"></div>
+            </div>
+          </div>
+
+          <div style="margin-top:18px; text-align:right;">
+            <button type="button" class="btn-primary" style="padding:12px 24px; font-size:16px; font-weight:600;" onclick="handleSearchBeforeCreate()">
+              &#55357;&#56589; Search & Check Matching Candidates
+            </button>
+          </div>
+
+          <div id="searchBeforeCreateResults" style="display:none; margin-top:20px;"></div>
+        </div>
+
+        <div id="fullProfileFormSection" style="display:none;">
+          <form id="profileForm" class="profile-form">
           <!-- Contributor Block -->
           <div class="form-section">
             <h3>Your Information</h3>
@@ -245,7 +370,7 @@
               <label>GPS Location</label>
               <div style="display:flex; gap:8px; align-items:center;">
                 <input type="text" name="gpsLocation" id="gpsCoordinates" placeholder="Latitude, Longitude (click capture to populate)" style="flex:1;">
-                <button type="button" class="btn-secondary btn-gps" onclick="getContributorGPSLocation()">📍 Capture Location</button>
+                <button type="button" class="btn-secondary btn-gps" onclick="getContributorGPSLocation()">&#55357;&#56525; Capture Location</button>
               </div>
               <input type="hidden" name="gpsLatitude" id="gpsLatitude">
               <input type="hidden" name="gpsLongitude" id="gpsLongitude">
@@ -308,6 +433,7 @@
             <button type="submit" class="btn-primary">Create Profile</button>
           </div>
         </form>
+        </div>
 
         <div id="formMessage" class="form-message"></div>
       </div>
@@ -564,7 +690,7 @@
           </div>
           <div class="form-group">
             <label>Add Sterilization Certificate / Photos / Supporting Documents <span class="optional-text">(Optional)</span></label>
-            <input type="file" id="sterilizationMediaUpload" accept="image/*,video/*,application/pdf" multiple onchange="handleEventFileSelect(event)">
+            <input type="file" id="sterilizationMediaUpload" accept="image/*,video/*,application/pdf" multiple onchange="handleSterilizationFileSelect(event)">
             <div id="sterilizationFileList" class="file-list"></div>
             <small>Upload up to 5 supported files. Max 10 MB per file.</small>
           </div>
@@ -583,7 +709,7 @@
   <div id="page-profile" class="page">
     <section class="section-profile">
       <div class="container">
-        <button class="btn-back" onclick="showPage('search')">← Back to Search</button>
+        <button class="btn-back" onclick="showPage('search')">&#8592; Back to Search</button>
         <div id="profileDisplay" class="profile-display"></div>
       </div>
     </section>

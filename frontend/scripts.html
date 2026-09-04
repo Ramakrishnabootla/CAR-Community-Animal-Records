@@ -1,7 +1,8 @@
-﻿<script>
+<script>
   // Global state
   let uploadedFiles = [];
-  let eventUploadedFiles = [];
+  let eventUploadedFiles = [];          // BUG-14 FIX: Was shared; now Medical panel uses this
+  let sterilizationUploadedFiles = [];  // BUG-14 FIX: Separate array for Sterilization panel
   let profileRecords = {};
   let currentSearchCandidate = null;
   let isSubmitting = false;
@@ -69,54 +70,144 @@
     );
   }
 
+  // Global state for Step 1 SBC uploads
+  let sbcUploadedFiles = [];
+
+  function handleSbcAnimalTypeChange(val) {
+    const field = document.getElementById('sbcFieldNativeDog');
+    if (field) field.style.display = (val === 'Dog') ? 'block' : 'none';
+  }
+
+  function handleSbcPhotoSelect(event) {
+    const files = Array.from(event.target.files);
+    const previewEl = document.getElementById('sbcPhotoPreview');
+    if (previewEl) previewEl.innerHTML = '';
+    sbcUploadedFiles = [];
+    for (const file of files) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64Data = e.target.result;
+        sbcUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data, visibility: 'Restricted', source: 'Self-reported' });
+        if (previewEl) {
+          previewEl.innerHTML += `
+            <div style="display:inline-block; margin-right:8px; text-align:center;">
+              <img src="${base64Data}" style="width:80px; height:80px; object-fit:cover; border-radius:6px; border:1px solid #2D7A5F;" />
+              <div style="font-size:11px; color:#555; max-width:80px; overflow:hidden; text-overflow:ellipsis;">${file.name}</div>
+            </div>
+          `;
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
+  function getSbcGPSLocation() {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    const gpsInput = document.getElementById('sbcGpsCoordinates');
+    if (gpsInput) gpsInput.placeholder = '📍 Capturing GPS...';
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        if (gpsInput) gpsInput.value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      },
+      (error) => {
+        alert('Could not capture GPS automatically. Please enter coordinates or landmark manually.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  function getDirectDriveImageUrl(fileIdOrUrl) {
+    if (!fileIdOrUrl) return '';
+    const str = String(fileIdOrUrl).trim();
+    if (str.startsWith('data:image')) return str;
+    let fileId = str;
+    if (str.includes('id=')) {
+      fileId = str.split('id=')[1].split('&')[0];
+    } else if (str.includes('/d/')) {
+      fileId = str.split('/d/')[1].split('/')[0];
+    }
+    if (/^[a-zA-Z0-9_-]{20,}$/.test(fileId)) {
+      return 'https://lh3.googleusercontent.com/d/' + fileId;
+    }
+    return str;
+  }
+
   // W2.1: Locality Search Before Create
   function handleSearchBeforeCreate() {
-    const animalType = document.querySelector('[name="animalType"]')?.value;
-    const area = document.querySelector('[name="area"]')?.value;
-    const animalName = document.querySelector('[name="animalName"]')?.value;
-    const sex = document.querySelector('[name="sex"]')?.value;
-    const breedType = document.querySelector('[name="breedType"]')?.value;
-    const identificationMarks = document.querySelector('[name="identificationMarks"]')?.value;
+    const animalType = document.getElementById('sbcAnimalType')?.value?.trim();
+    const area = document.getElementById('sbcArea')?.value?.trim();
+    const animalName = document.getElementById('sbcAnimalName')?.value?.trim();
+    const sex = document.getElementById('sbcSex')?.value?.trim();
+    const breedType = document.getElementById('sbcBreedType')?.value?.trim();
+    const nativeDogType = document.getElementById('sbcNativeDogType')?.value?.trim();
+    const caregiverType = document.getElementById('sbcCaregiverType')?.value?.trim();
+    const identificationMarks = document.getElementById('sbcIdentificationMarks')?.value?.trim();
 
     const resultsContainer = document.getElementById('searchBeforeCreateResults');
     const fullFormSection = document.getElementById('fullProfileFormSection');
 
     if (!animalType || !area) {
-      alert('Please select Animal Type and enter Area/Locality to search first.');
+      alert('Please select Animal Type and enter Area/Locality to search.');
+      if (!animalType) document.getElementById('sbcAnimalType')?.focus();
+      else if (!area) document.getElementById('sbcArea')?.focus();
       return;
     }
 
-    resultsContainer.innerHTML = '<div style="padding:16px;">🔍 Searching candidate profiles in ' + area + '...</div>';
+    resultsContainer.innerHTML = '<div style="padding:16px; color:#2D7A5F; font-weight:600;">🔍 Searching candidate profiles in ' + area + '...</div>';
     resultsContainer.style.display = 'block';
 
     google.script.run
       .withSuccessHandler((response) => {
-        if (!response.success) {
-          resultsContainer.innerHTML = `<div class="form-message error">${response.error}</div>`;
+        if (!response || !response.success) {
+          const errMsg = (response && response.error) ? response.error : 'Search failed or returned empty response.';
+          resultsContainer.innerHTML = `<div class="form-message error">${errMsg}</div>`;
           return;
         }
 
         if (!response.matchesFound || response.candidates.length === 0) {
           resultsContainer.innerHTML = `
             <div style="background:#E6F4EA; border:1px solid #C2E7CD; padding:16px; border-radius:8px; margin-bottom:16px;">
-              <strong>✅ No Matching Animal Found!</strong> You are good to create a new profile for this animal.
+              <strong style="color:#137333; font-size:16px;">✅ No Matching Animal Found in ${area}!</strong>
+              <p style="margin-top:6px; color:#333;">You are good to create a new profile for this animal. All details entered above have been auto-filled into the profile creation form below.</p>
             </div>
           `;
-          if (fullFormSection) fullFormSection.style.display = 'block';
+          autoFillProfileFormFromSbc();
+          if (fullFormSection) {
+            fullFormSection.style.display = 'block';
+            fullFormSection.scrollIntoView({ behavior: 'smooth' });
+          }
           return;
         }
 
-        // Render Match Comparison Cards
+        // Render Match Comparison Cards with Side-by-Side Verification
+        let userPhotoHtml = '';
+        if (sbcUploadedFiles.length > 0 && sbcUploadedFiles[0].base64Data) {
+          userPhotoHtml = `
+            <div style="background:#f9f9f9; border:1px solid #ddd; padding:12px; border-radius:8px; margin-bottom:14px; text-align:center;">
+              <strong style="font-size:13px; color:#555;">📸 Your Submitted Photo (Side-by-Side Comparison)</strong><br>
+              <img src="${sbcUploadedFiles[0].base64Data}" style="max-height:140px; max-width:100%; border-radius:6px; margin-top:6px;" />
+            </div>
+          `;
+        }
+
         let html = `
           <div style="background:#FFF3E0; border:1px solid #FFE0B2; padding:16px; border-radius:8px; margin-bottom:16px;">
-            <strong>⚠️ Potential Candidate Matches Found in ${area}!</strong>
-            <p style="font-size:14px; margin-top:4px;">Please check if this is the same animal before creating a new profile.</p>
+            <strong style="color:#D97706; font-size:16px;">⚠️ Potential Candidate Matches Found in ${area}!</strong>
+            <p style="font-size:14px; margin-top:4px; color:#555;">Compare the candidate details and photo side-by-side before deciding whether to append an event or create a new record.</p>
           </div>
+          ${userPhotoHtml}
           <div class="match-card-grid">
         `;
 
         response.candidates.forEach(c => {
           const isHigh = c.matchScore >= 70;
+          const directImgUrl = getDirectDriveImageUrl(c.driveFileURL);
           html += `
             <div class="match-card ${isHigh ? 'high-match' : 'med-match'}">
               <span class="match-score-badge">${c.matchScore}% Match</span>
@@ -124,9 +215,9 @@
               <p><strong>Type:</strong> ${c.animalType} | <strong>Sex:</strong> ${c.sex}</p>
               <p><strong>Locality:</strong> ${c.area}</p>
               <p><strong>Marks:</strong> ${c.identificationMarks || 'None'}</p>
-              ${c.driveFileURL ? `<img src="${c.driveFileURL}" class="media-thumb" style="margin-top:8px;" />` : ''}
+              ${directImgUrl ? `<img src="${directImgUrl}" class="media-thumb" style="margin-top:8px; width:100%; max-height:160px; object-fit:cover; border-radius:6px;" />` : ''}
               
-              <div class="match-actions">
+              <div class="match-actions" style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
                 <button type="button" class="btn-match-same" onclick="selectSameAnimal('${c.carProfileId}', '${c.animalName}')">
                   ✅ Same Animal (Add Event to History)
                 </button>
@@ -140,9 +231,10 @@
 
         html += `
           </div>
-          <div style="margin-top:16px; text-align:center;">
-            <button type="button" class="btn-secondary" onclick="selectDifferentAnimal()">
-              🐾 None of these (Create Brand New Profile)
+          <div style="margin-top:20px; text-align:center; padding:16px; background:#f9f9f9; border-radius:8px;">
+            <p style="margin-bottom:10px; font-weight:500;">None of these match your animal?</p>
+            <button type="button" class="btn-primary" onclick="selectDifferentAnimal()">
+              🐾 None of these — Proceed with New Profile Creation
             </button>
           </div>
         `;
@@ -155,6 +247,61 @@
       .apiSearchBeforeCreate({ animalType, area, animalName, sex, breedType, identificationMarks });
   }
 
+  function autoFillProfileFormFromSbc() {
+    const setVal = (name, val) => {
+      if (!val) return;
+      const el = document.querySelector(`[name="${name}"]`);
+      if (el) el.value = val;
+    };
+
+    const sbcAnimalType = document.getElementById('sbcAnimalType')?.value;
+    const sbcArea = document.getElementById('sbcArea')?.value;
+    const sbcAnimalName = document.getElementById('sbcAnimalName')?.value;
+    const sbcSex = document.getElementById('sbcSex')?.value;
+    const sbcBreedType = document.getElementById('sbcBreedType')?.value;
+    const sbcNativeDogType = document.getElementById('sbcNativeDogType')?.value;
+    const sbcCaregiverType = document.getElementById('sbcCaregiverType')?.value;
+    const sbcIdentificationMarks = document.getElementById('sbcIdentificationMarks')?.value;
+    const sbcGpsCoordinates = document.getElementById('sbcGpsCoordinates')?.value;
+
+    setVal('animalType', sbcAnimalType);
+    setVal('area', sbcArea);
+    setVal('animalName', sbcAnimalName);
+    setVal('sex', sbcSex);
+    setVal('breedType', sbcBreedType);
+    setVal('nativeDogType', sbcNativeDogType);
+
+    if (sbcCaregiverType) {
+      setVal('caregiverType', sbcCaregiverType);
+      setVal('caregiverAnswer', 'Yes');
+      const caregiverWhoEl = document.getElementById('fieldCaregiverWho');
+      if (caregiverWhoEl) caregiverWhoEl.style.display = '';
+    }
+
+    setVal('identificationMarks', sbcIdentificationMarks);
+
+    if (sbcGpsCoordinates) {
+      const gpsInput = document.getElementById('gpsCoordinates');
+      if (gpsInput) gpsInput.value = sbcGpsCoordinates;
+    }
+
+    if (sbcUploadedFiles && sbcUploadedFiles.length > 0) {
+      uploadedFiles = [...sbcUploadedFiles];
+      const listEl = document.getElementById('fileList');
+      if (listEl) {
+        listEl.innerHTML = '';
+        uploadedFiles.forEach(f => {
+          listEl.innerHTML += `<div>📎 ${f.filename}</div>`;
+        });
+      }
+    }
+
+    if (sbcAnimalType === 'Dog') {
+      const fieldNative = document.getElementById('fieldNativeDogType');
+      if (fieldNative) fieldNative.style.display = '';
+    }
+  }
+
   function selectSameAnimal(carProfileId, animalName) {
     if (confirm(`Open Add Event form to append event history for ${animalName} (${carProfileId})?`)) {
       showPage('event');
@@ -163,8 +310,12 @@
   }
 
   function selectDifferentAnimal() {
+    autoFillProfileFormFromSbc();
     const fullFormSection = document.getElementById('fullProfileFormSection');
-    if (fullFormSection) fullFormSection.style.display = 'block';
+    if (fullFormSection) {
+      fullFormSection.style.display = 'block';
+      fullFormSection.scrollIntoView({ behavior: 'smooth' });
+    }
     const resultsContainer = document.getElementById('searchBeforeCreateResults');
     if (resultsContainer) resultsContainer.style.display = 'none';
   }
@@ -172,14 +323,19 @@
   function selectNotSure(matchedCarProfileId, matchScore) {
     if (!confirm('Flag submission on HOLD for Admin side-by-side review?')) return;
 
+    autoFillProfileFormFromSbc();
     const data = gatherProfileFormData();
+    if (sbcUploadedFiles.length > 0 && (!data.media || data.media.length === 0)) {
+      data.media = sbcUploadedFiles;
+    }
+
     google.script.run
       .withSuccessHandler((res) => {
-        if (res.success) {
+        if (res && res.success) {
           alert('Submission placed on HOLD (ID: ' + res.holdId + '). Sent to Admin for side-by-side review.');
           showPage('search');
         } else {
-          alert('Error: ' + res.error);
+          alert('Error: ' + ((res && res.error) || 'Failed to submit hold.'));
         }
       })
       .apiSaveUncertainMatch({
@@ -187,6 +343,12 @@
         matchScore: matchScore,
         submittedData: data
       });
+  }
+
+  // BUG-13 FIX: closeMatchModal was called in index.html but never defined — now implemented
+  function closeMatchModal() {
+    const modal = document.getElementById('matchResultsModal');
+    if (modal) modal.style.display = 'none';
   }
 
   // Profile Form Handling with Double-Click Protection
@@ -209,28 +371,27 @@
       .withSuccessHandler((response) => {
         showLoading(false);
         isSubmitting = false;
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Profile'; }
+        // BUG-02 FIX: Reset button label to match the HTML button text ('Create Profile', not 'Save Profile')
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Create Profile'; }
 
-        if (response.success) {
-          messageEl.className = 'form-message success';
-          messageEl.innerHTML = `
-            <h3>✅ Profile Created Successfully!</h3>
-            <p><strong>CAR Profile ID:</strong> <span class="profile-car-id">${response.carProfileId}</span></p>
-            <p style="margin-top:8px;">You can search or view history using this ID.</p>
-          `;
-          messageEl.style.display = 'block';
-          e.target.reset();
+        if (response && response.success) {
+          alert('✅ Profile Created Successfully! CAR Profile ID: ' + response.carProfileId);
           uploadedFiles = [];
+          
+          // Immediately retrieve and show the created profile
+          handleSearchById(response.carProfileId, 'New Profile Created Successfully!');
         } else {
+          // BUG-01 FIX: Use 'form-message error' class (not 'success') when profile save fails
           messageEl.className = 'form-message error';
-          messageEl.innerText = response.error;
           messageEl.style.display = 'block';
+          messageEl.innerText = 'Error saving profile: ' + (response.error || 'Unknown error');
         }
       })
       .withFailureHandler((err) => {
         showLoading(false);
         isSubmitting = false;
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Profile'; }
+        // BUG-02 FIX: Consistent label reset on failure path too
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Create Profile'; }
         messageEl.className = 'form-message error';
         messageEl.innerText = 'Server Error: ' + err.message;
         messageEl.style.display = 'block';
@@ -239,78 +400,144 @@
   }
 
   function gatherProfileFormData() {
+    const getVal = (selector, fallback = '') => {
+      const el = document.querySelector(selector);
+      return el ? el.value.trim() : fallback;
+    };
+    const getById = (id, fallback = '') => {
+      const el = document.getElementById(id);
+      return el ? el.value.trim() : fallback;
+    };
+
     return {
       contributor: {
-        name: document.querySelector('[name="contributorName"]').value,
-        mobile: document.querySelector('[name="contributorMobile"]').value,
-        email: document.querySelector('[name="contributorEmail"]').value
+        name: getVal('[name="contributorName"]'),
+        mobile: getVal('[name="contributorMobile"]'),
+        email: getVal('[name="contributorEmail"]')
       },
       animal: {
-        animalType: document.querySelector('[name="animalType"]').value,
-        animalName: document.querySelector('[name="animalName"]').value,
-        sex: document.querySelector('[name="sex"]').value,
-        age: document.querySelector('[name="age"]').value,
-        breedType: document.querySelector('[name="breedType"]').value,
-        nativeDogType: document.querySelector('[name="nativeDogType"]')?.value || '',
-        breedOtherDetails: document.querySelector('[name="breedOtherDetails"]')?.value || '',
-        caregiverAnswer: document.querySelector('[name="caregiverAnswer"]')?.value || '',
-        caregiverType: document.querySelector('[name="caregiverType"]')?.value || '',
-        careProvided: document.querySelector('[name="careProvided"]')?.value || ''
+        animalType: getVal('[name="animalType"]'),
+        animalName: getVal('[name="animalName"]') || 'Unknown',
+        sex: getVal('[name="sex"]', 'Unknown'),
+        age: getVal('[name="age"]', 'Unknown'),
+        breedType: getVal('[name="breedType"]'),
+        nativeDogType: getVal('[name="nativeDogType"]'),
+        breedOtherDetails: getVal('[name="breedOtherDetails"]'),
+        caregiverAnswer: getVal('[name="caregiverAnswer"]'),
+        caregiverType: getVal('[name="caregiverType"]'),
+        // BUG-03 FIX: caregiverOtherDetails was not being sent to the backend — now included
+        caregiverOtherDetails: getVal('[name="caregiverOtherDetails"]'),
+        careProvided: getVal('[name="careProvided"]'),
+        careOtherDetails: getVal('[name="careOtherDetails"]')
       },
       location: {
-        area: document.querySelector('[name="area"]').value,
-        city: document.querySelector('[name="city"]').value,
-        state: document.querySelector('[name="state"]')?.value || 'Karnataka',
-        usualLocationType: document.querySelector('[name="usualLocationType"]')?.value || 'Public Area',
-        landmark: document.querySelector('[name="landmark"]')?.value || '',
-        gpsCoordinates: document.getElementById('gpsCoordinates')?.value || '',
-        gpsLatitude: document.getElementById('gpsLatitude')?.value || '',
-        gpsLongitude: document.getElementById('gpsLongitude')?.value || '',
-        gpsCapturedMethod: document.getElementById('gpsCapturedMethod')?.value || 'Manual Entry',
-        seenRegularly: document.querySelector('[name="seenRegularly"]')?.value || 'Yes'
+        area: getVal('[name="area"]'),
+        city: getVal('[name="city"]'),
+        state: getVal('[name="state"]', 'Telangana'),
+        usualLocationType: getVal('[name="usualLocationType"]', 'Residential area'),
+        landmark: getVal('[name="landmark"]'),
+        gpsCoordinates: getById('gpsCoordinates'),
+        gpsLatitude: getById('gpsLatitude'),
+        gpsLongitude: getById('gpsLongitude'),
+        gpsCapturedMethod: getById('gpsCapturedMethod', 'Manual Entry'),
+        seenRegularly: getVal('[name="seenRegularly"]', 'Yes')
       },
       baselineStatus: {
-        healthStatus: document.querySelector('[name="healthStatus"]').value,
-        vaccinationStatus: document.querySelector('[name="vaccinationStatus"]')?.value || 'Unknown',
-        sterilisationStatus: document.querySelector('[name="sterilisationStatus"]')?.value || 'Unknown',
-        behavior: document.querySelector('[name="behavior"]').value,
-        identificationMarks: document.querySelector('[name="identificationMarks"]').value
+        healthStatus: getVal('[name="healthStatus"]', 'Healthy'),
+        vaccinationStatus: getVal('[name="vaccinationStatus"]', 'Unknown'),
+        sterilisationStatus: getVal('[name="sterilisationStatus"]', 'Unknown'),
+        behavior: getVal('[name="behavior"]'),
+        identificationMarks: getVal('[name="identificationMarks"]')
       },
       media: uploadedFiles
     };
   }
 
-  // Search profile by exact ID
+  // Search profile by exact ID or keyword search
   function handleSearch() {
     const query = document.getElementById('searchInput').value.trim();
     if (!query) return;
+    handleSearchById(query);
+  }
 
+  function handleSearchById(carProfileId, bannerMessage = '') {
     showLoading(true);
+    if (!window.google || !google.script || !google.script.run) {
+      showLoading(false);
+      alert('Local Preview Mode: Google Apps Script API is available when deployed. Searching for: ' + carProfileId);
+      return;
+    }
+
     google.script.run
       .withSuccessHandler((response) => {
         showLoading(false);
-        if (response.success && response.found) {
-          renderProfileDisplay(response.profile);
+        if (response && response.success && response.found) {
+          renderProfileDisplay(response.profile, bannerMessage);
           showPage('profile');
         } else {
-          alert('Profile not found for ID: ' + query);
+          // If exact ID search fails, try broad search (name, area, etc.)
+          google.script.run
+            .withSuccessHandler((searchRes) => {
+              if (searchRes && searchRes.success && searchRes.found && searchRes.profiles.length > 0) {
+                // If single match found, load its full profile
+                if (searchRes.profiles.length === 1) {
+                  handleSearchById(searchRes.profiles[0].carProfileId);
+                } else {
+                  // Show candidate search result cards in browse container
+                  const container = document.getElementById('searchResults');
+                  if (container) {
+                    let html = `<h3>Search Results for "${carProfileId}"</h3><div class="match-card-grid">`;
+                    searchRes.profiles.forEach(p => {
+                      html += `
+                        <div class="match-card" style="cursor:pointer;" onclick="handleSearchById('${p.carProfileId}')">
+                          <span class="profile-car-id">${p.carProfileId}</span>
+                          <h4>${p.animalName} (${p.animalType})</h4>
+                          <p><strong>Area:</strong> ${p.area || 'Unknown'}</p>
+                          <button class="btn-primary" style="margin-top:8px; width:100%;">View Full Profile</button>
+                        </div>
+                      `;
+                    });
+                    html += `</div>`;
+                    container.innerHTML = html;
+                    showPage('search');
+                  }
+                }
+              } else {
+                alert('No animal profile found matching: ' + carProfileId);
+              }
+            })
+            .apiSearchRecords(carProfileId);
         }
       })
-      .withFailureHandler((err) => { showLoading(false); alert('Error: ' + err.message); })
-      .apiSearchProfile(query);
+      .withFailureHandler((err) => { showLoading(false); alert('Search Error: ' + err.message); })
+      .apiSearchProfile(carProfileId);
   }
 
-  function renderProfileDisplay(profile) {
+  function renderProfileDisplay(profile, bannerMessage = '') {
     const display = document.getElementById('profileDisplay');
-    const a = profile.animal;
+    if (!display || !profile) return;
+
+    const a = profile.animal || {};
     const l = profile.location || {};
     const b = profile.baselineStatus || {};
     const events = profile.events || [];
     const media = profile.media || [];
 
+    let bannerHtml = '';
+    if (bannerMessage) {
+      bannerHtml = `
+        <div style="background-color:#e6f4ea; border:1px solid #c2e7cd; color:#137333; padding:16px; border-radius:8px; margin-bottom:20px; font-weight:600;">
+          ✅ ${bannerMessage} (CAR ID: ${a.carProfileId})
+        </div>
+      `;
+    }
+
     let mediaHtml = '';
     media.forEach(m => {
-      if (m.driveFileURL) mediaHtml += `<a href="${m.driveFileURL}" target="_blank"><img src="${m.driveFileURL}" class="media-thumb" /></a>`;
+      if (m.driveFileURL) {
+        const directUrl = getDirectDriveImageUrl(m.driveFileURL);
+        mediaHtml += `<a href="${m.driveFileURL}" target="_blank"><img src="${directUrl}" class="media-thumb" title="${m.fileName || 'Media'}" /></a>`;
+      }
     });
 
     let eventsHtml = '';
@@ -320,18 +547,20 @@
           <div class="timeline-date">${e.dateOfEvent || e.timestamp} | ${e.eventType}</div>
           <div class="timeline-content">
             <p><strong>Description:</strong> ${e.eventDescription || 'No description'}</p>
-            <p><span class="info-text">Source: ${e.source} | Status: ${e.verificationStatus}</span></p>
+            <p><span class="info-text">Source: ${e.source || 'Self-reported'} | Verification: ${e.verificationStatus || 'Unverified'}</span></p>
           </div>
         </div>
       `;
     });
 
     display.innerHTML = `
+      ${bannerHtml}
       <div class="profile-header">
         <span class="profile-car-id">${a.carProfileId}</span>
         <h1 class="profile-title">${a.animalName}</h1>
         <div class="profile-meta">
-          ${a.animalType} • ${a.sex} • ${a.age} • Locality: ${l.area || 'Unknown'} ${l.gpsLatitude ? `(GPS: ${l.gpsLatitude}, ${l.gpsLongitude})` : ''}
+          ${a.animalType} • ${a.sex} • ${a.age} • Locality: ${l.area || 'Unknown'} ${l.landmark ? `(Near ${l.landmark})` : ''}
+          ${l.gpsCoordinates ? `<br><small style="color:#2D7A5F;">📍 GPS: ${l.gpsCoordinates} (${l.gpsCapturedMethod || 'Captured'})</small>` : ''}
         </div>
       </div>
       <div class="detail-grid">
@@ -345,6 +574,9 @@
         <h3 class="timeline-title">Event & Care History</h3>
         ${eventsHtml || '<p class="info-text">No recorded events yet.</p>'}
       </div>
+      <div style="margin-top:24px;">
+        <button class="btn-primary" onclick="showPage('event'); document.getElementById('eventCarProfileId').value='${a.carProfileId}';">+ Add Event / Medical Update</button>
+      </div>
     `;
   }
 
@@ -356,7 +588,7 @@
   function loadSearchStats() {
     google.script.run
       .withSuccessHandler((res) => {
-        if (!res.success) return;
+        if (!res || !res.success) return;
         const row = document.getElementById('statsDisplay');
         if (row) {
           row.innerHTML = `
@@ -373,7 +605,7 @@
   function loadProfiles() {
     google.script.run
       .withSuccessHandler((res) => {
-        if (!res.success) return;
+        if (!res || !res.success) return;
         const container = document.getElementById('browseProfiles');
         if (!container) return;
         let html = '';
@@ -390,4 +622,332 @@
       })
       .apiListProfiles();
   }
+
+  // Local Developer Mock Runner for testing index.html directly in local browser without GAS server
+  if (typeof google === 'undefined' || !google.script || !google.script.run) {
+    const mockDb = {
+      profiles: {
+        'CAR-20260904-00001': {
+          animal: { carProfileId: 'CAR-20260904-00001', animalName: 'Bruno', animalType: 'Dog', sex: 'Male', age: 'Adult', breedType: 'Indie / Native' },
+          location: { area: 'Banjara Hills', city: 'Hyderabad', landmark: 'Near Apollo Pharmacy', gpsCoordinates: '17.4156, 78.4347', gpsCapturedMethod: 'Device GPS' },
+          baselineStatus: { healthStatus: 'Healthy', vaccinationStatus: 'Yes', sterilisationStatus: 'Sterilised', identificationMarks: 'Red Collar, Ear notch' },
+          media: [],
+          events: [{ eventType: 'Vaccination or Preventive Care', dateOfEvent: '2026-08-15', eventDescription: 'ARV Vaccination given by volunteer group', source: 'Vet Clinic', verificationStatus: 'Vet Verified' }]
+        }
+      }
+    };
+
+    window.google = {
+      script: {
+        run: {
+          withSuccessHandler: function(successCb) {
+            this._successCb = successCb;
+            return this;
+          },
+          withFailureHandler: function(failCb) {
+            this._failCb = failCb;
+            return this;
+          },
+          apiSaveProfile: function(data) {
+            const newId = 'CAR-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(10000 + Math.random() * 90000);
+            mockDb.profiles[newId] = {
+              animal: { carProfileId: newId, animalName: data.animal.animalName || 'Buddy', animalType: data.animal.animalType || 'Dog', sex: data.animal.sex || 'Male', age: data.animal.age || 'Adult' },
+              location: { area: data.location.area || 'Locality', city: data.location.city || 'City', landmark: data.location.landmark || '', gpsCoordinates: data.location.gpsCoordinates || '' },
+              baselineStatus: { healthStatus: data.baselineStatus.healthStatus || 'Healthy', vaccinationStatus: data.baselineStatus.vaccinationStatus || 'Unknown', sterilisationStatus: data.baselineStatus.sterilisationStatus || 'Unknown', identificationMarks: data.baselineStatus.identificationMarks || 'None' },
+              media: data.media || [],
+              events: []
+            };
+            setTimeout(() => {
+              if (this._successCb) this._successCb({ success: true, carProfileId: newId });
+            }, 300);
+          },
+          apiSearchProfile: function(carProfileId) {
+            setTimeout(() => {
+              const cleanId = String(carProfileId).trim().replace(/^'/,'');
+              const found = mockDb.profiles[cleanId] || Object.values(mockDb.profiles)[0];
+              if (this._successCb) this._successCb({ success: true, found: true, profile: found });
+            }, 200);
+          },
+          apiSearchRecords: function(query) {
+            setTimeout(() => {
+              const list = Object.values(mockDb.profiles).map(p => ({
+                carProfileId: p.animal.carProfileId,
+                animalName: p.animal.animalName,
+                animalType: p.animal.animalType,
+                area: p.location.area
+              }));
+              if (this._successCb) this._successCb({ success: true, found: true, profiles: list });
+            }, 200);
+          },
+          apiListProfiles: function() {
+            setTimeout(() => {
+              const list = Object.values(mockDb.profiles).map(p => ({
+                carProfileId: p.animal.carProfileId,
+                animalName: p.animal.animalName,
+                animalType: p.animal.animalType,
+                area: p.location.area
+              }));
+              if (this._successCb) this._successCb({ success: true, profiles: list });
+            }, 200);
+          },
+          apiGetSearchStats: function() {
+            setTimeout(() => {
+              if (this._successCb) this._successCb({ success: true, animalsCount: Object.keys(mockDb.profiles).length, eventsCount: 1, areasCount: 1, percentLinked: 100 });
+            }, 200);
+          },
+          apiSearchBeforeCreate: function(q) {
+            setTimeout(() => {
+              if (this._successCb) this._successCb({ success: true, matchesFound: false, candidates: [] });
+            }, 200);
+          },
+          apiSaveUncertainMatch: function(d) {
+            setTimeout(() => {
+              if (this._successCb) this._successCb({ success: true, holdId: 'HLD-99999' });
+            }, 200);
+          },
+          apiGetPendingHolds: function() {
+            setTimeout(() => {
+              if (this._successCb) this._successCb({ success: true, holds: [] });
+            }, 200);
+          }
+        }
+      }
+    };
+  }
+
+  // ─── File Upload Handlers ───────────────────────────────────────────────────
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Profile photo uploads
+  async function handleFileSelect(event) {
+    const files = Array.from(event.target.files);
+    const listEl = document.getElementById('fileList');
+    if (listEl) listEl.innerHTML = '';
+    uploadedFiles = [];
+    for (const file of files) {
+      const base64Data = await readFileAsBase64(file);
+      uploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data, visibility: 'Restricted', source: 'Self-reported' });
+      if (listEl) listEl.innerHTML += `<div>📎 ${file.name} (${(file.size/1024).toFixed(1)} KB)</div>`;
+    }
+  }
+
+  // Medical Treatment event file uploads (BUG-14 FIX: uses eventUploadedFiles only)
+  async function handleEventFileSelect(event) {
+    const files = Array.from(event.target.files);
+    const listEl = document.getElementById('eventFileList');
+    if (listEl) listEl.innerHTML = '';
+    eventUploadedFiles = [];
+    for (const file of files) {
+      const base64Data = await readFileAsBase64(file);
+      eventUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data, visibility: 'Restricted', source: 'Self-reported' });
+      if (listEl) listEl.innerHTML += `<div>📎 ${file.name} (${(file.size/1024).toFixed(1)} KB)</div>`;
+    }
+  }
+
+  // BUG-14 FIX: Sterilization has its OWN separate file array, not shared with Medical
+  async function handleSterilizationFileSelect(event) {
+    const files = Array.from(event.target.files);
+    const listEl = document.getElementById('sterilizationFileList');
+    if (listEl) listEl.innerHTML = '';
+    sterilizationUploadedFiles = [];
+    for (const file of files) {
+      const base64Data = await readFileAsBase64(file);
+      sterilizationUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data, visibility: 'Restricted', source: 'Self-reported' });
+      if (listEl) listEl.innerHTML += `<div>📎 ${file.name} (${(file.size/1024).toFixed(1)} KB)</div>`;
+    }
+  }
+
+  // ─── Event Form Submit ───────────────────────────────────────────────────────
+
+  function handleEventSubmit(e) {
+    e.preventDefault();
+    if (isSubmitting) return;
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving Event...'; }
+    isSubmitting = true;
+    showLoading(true);
+
+    const carProfileId = document.getElementById('eventCarProfileId')?.value?.trim();
+    const activePanel = document.querySelector('.event-kind-button.active')?.dataset?.eventKind || 'Vaccination or Preventive Care';
+
+    // BUG-14 FIX: Use the correct file array based on which panel is active
+    const mediaFiles = activePanel === 'Sterilization' ? sterilizationUploadedFiles : eventUploadedFiles;
+
+    const getVal = (selector, fallback = '') => {
+      const el = e.target.querySelector(selector);
+      return el ? el.value.trim() : fallback;
+    };
+    const getChecked = (name) => Array.from(e.target.querySelectorAll(`[name="${name}"]:checked`)).map(cb => cb.value).join(', ');
+
+    let eventPayload = { eventType: activePanel };
+
+    if (activePanel === 'Vaccination or Preventive Care') {
+      eventPayload = {
+        eventType: activePanel,
+        eventCategory: getVal('[name="preventiveCareType"]'),
+        eventOtherDetails: getVal('[name="preventiveCareOtherDetails"]'),
+        dateOfEvent: getVal('[name="preventiveCareDate"]'),
+        organisationOrPerson: getVal('[name="preventiveCareGivenBy"]'),
+        additionalDetails: getVal('[name="vaccineProductName"]')
+      };
+    } else if (activePanel === 'Medical Treatment') {
+      eventPayload = {
+        eventType: activePanel,
+        dateOfEvent: getVal('[name="medicalTreatmentDate"]'),
+        healthCondition: getChecked('medicalTreatmentHealthCondition'),
+        behaviour: getChecked('medicalTreatmentBehaviour'),
+        eventCategory: getChecked('medicalTreatmentReason'),
+        eventDescription: getVal('[name="medicalTreatmentGiven"]'),
+        organisationOrPerson: getVal('[name="medicalTreatmentProvidedBy"]'),
+        additionalDetails: getVal('[name="medicalTreatmentAdditionalDetails"]')
+      };
+    } else if (activePanel === 'Sterilization') {
+      eventPayload = {
+        eventType: activePanel,
+        dateReported: getVal('[name="sterilizationDateReported"]'),
+        healthCondition: getChecked('sterilizationHealthCondition'),
+        behaviour: getChecked('sterilizationBehaviour'),
+        vaccinated: getVal('[name="sterilizationVaccinated"]'),
+        sterilised: getVal('[name="sterilizationStatus"]'),
+        identificationMarks: getChecked('sterilizationIdentificationMarks'),
+        eventCategory: getChecked('sterilizationProcedureActions'),
+        dateOfEvent: getVal('[name="sterilizationProcedureDate"]'),
+        organisationOrPerson: getVal('[name="sterilizationPerformedBy"]'),
+        outcomeCurrentStatus: getVal('[name="sterilizationRecoveryStatus"]'),
+        additionalDetails: getVal('[name="sterilizationAdditionalDetails"]')
+      };
+    }
+
+    const messageEl = document.getElementById('eventMessage');
+    google.script.run
+      .withSuccessHandler((res) => {
+        showLoading(false);
+        isSubmitting = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Event'; }
+        if (res && res.success) {
+          alert('✅ Event saved! ID: ' + res.eventId);
+          eventUploadedFiles = [];
+          sterilizationUploadedFiles = [];
+          handleSearchById(carProfileId, 'Event Added Successfully!');
+        } else {
+          if (messageEl) { messageEl.className = 'form-message error'; messageEl.style.display = 'block'; messageEl.innerText = 'Error: ' + (res.error || 'Unknown error'); }
+        }
+      })
+      .withFailureHandler((err) => {
+        showLoading(false);
+        isSubmitting = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Event'; }
+        if (messageEl) { messageEl.className = 'form-message error'; messageEl.style.display = 'block'; messageEl.innerText = 'Server Error: ' + err.message; }
+      })
+      .apiSaveEvent({ carProfileId, event: eventPayload, media: mediaFiles });
+  }
+
+  // ─── Event Kind Toggle ───────────────────────────────────────────────────────
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Wire profile form submit
+    const profileForm = document.getElementById('profileForm');
+    if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
+
+    // Wire event form submit
+    const eventForm = document.getElementById('eventForm');
+    if (eventForm) eventForm.addEventListener('submit', handleEventSubmit);
+
+    // Event kind toggle buttons
+    document.querySelectorAll('.event-kind-button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.event-kind-button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const kind = btn.dataset.eventKind;
+        document.getElementById('eventType').value = kind;
+        document.querySelectorAll('.event-detail-panel').forEach(panel => {
+          panel.style.display = panel.dataset.eventPanel === kind ? '' : 'none';
+        });
+      });
+    });
+  });
+
+  // ─── Conditional field toggles (Profile Form) ───────────────────────────────
+
+  function handleAnimalTypeChange(val) {
+    document.getElementById('fieldNativeDogType').style.display = val === 'Dog' ? '' : 'none';
+  }
+
+  function handleNativeBreedChange(val) {
+    // Show breedOther if 'Other' selected
+    document.getElementById('fieldBreedOther').style.display = val === 'Other' ? '' : 'none';
+  }
+
+  function handleBreedTypeChange(val) {
+    document.getElementById('fieldBreedOther').style.display = (val === 'Other') ? '' : 'none';
+  }
+
+  function handleCaregiverChange(val) {
+    document.getElementById('fieldCaregiverWho').style.display = val === 'Yes' ? '' : 'none';
+    document.getElementById('fieldCareProvided').style.display = val === 'Yes' ? '' : 'none';
+  }
+
+  function handleCaregiverTypeChange(val) {
+    document.getElementById('fieldCaregiverOther').style.display = val === 'Other' ? '' : 'none';
+  }
+
+  function handleCareTypeChange(val) {
+    document.getElementById('fieldCareOther').style.display = val === 'Other' ? '' : 'none';
+  }
+
+  // ─── Admin Hold Queue Loader ─────────────────────────────────────────────────
+
+  function loadAdminHolds() {
+    const container = document.getElementById('adminHoldList');
+    if (!container) return;
+    container.innerHTML = '<p>Loading pending matches...</p>';
+    google.script.run
+      .withSuccessHandler((res) => {
+        if (!res || !res.success) { container.innerHTML = '<p class="form-message error">Failed to load holds.</p>'; return; }
+        if (!res.holds || res.holds.length === 0) { container.innerHTML = '<p style="color:#555;">✅ No pending holds. All submissions have been reviewed.</p>'; return; }
+        let html = '';
+        res.holds.forEach(h => {
+          const submitted = h.submittedData || {};
+          html += `
+            <div class="detail-card" style="margin-bottom:16px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="profile-car-id">${h.holdId}</span>
+                <span class="match-score-badge">${h.matchScore}% match score</span>
+              </div>
+              <p><strong>Matched Against:</strong> ${h.matchedCarProfileId || 'Unknown'}</p>
+              <p><strong>Submitted Animal:</strong> ${submitted.animal ? (submitted.animal.animalName || 'Unknown') + ' (' + submitted.animal.animalType + ')' : 'N/A'}</p>
+              <p><strong>Submitted At:</strong> ${h.createdAt || 'N/A'}</p>
+              <div style="display:flex; gap:10px; margin-top:12px;">
+                <button class="btn-primary" onclick="resolveHold('${h.holdId}', 'APPROVE')">✅ Approve — Create New Profile</button>
+                <button class="btn-secondary" onclick="resolveHold('${h.holdId}', 'REJECT')">❌ Reject — Mark as Duplicate</button>
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      })
+      .withFailureHandler(() => { container.innerHTML = '<p class="form-message error">Error loading holds.</p>'; })
+      .apiGetPendingHolds();
+  }
+
+  function resolveHold(holdId, action) {
+    const label = action === 'APPROVE' ? 'APPROVE (create new profile)' : 'REJECT (mark as duplicate)';
+    if (!confirm(`Confirm: ${label} for Hold ID ${holdId}?`)) return;
+    google.script.run
+      .withSuccessHandler((res) => {
+        alert(res.success ? '✅ Hold resolved: ' + res.status : 'Error: ' + res.error);
+        loadAdminHolds();
+      })
+      .apiResolveHold(holdId, action, '');
+  }
+
 </script>

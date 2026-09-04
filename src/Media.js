@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - Media Upload Module
  * Saves uploaded digital evidence files in Google Drive folder structured by animal type
  * Renames files to: [CARProfileID]_[ContributorName].[ext]
@@ -14,7 +14,11 @@ function getOrCreateMediaFolder() {
     return folders.next();
   } else {
     const newFolder = DriveApp.createFolder(CONFIG.driveFolderName);
-    // Restricted by default in Week 2
+    try {
+      newFolder.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+    } catch (e) {
+      Logger.log('Warning: Could not set folder sharing restriction: ' + e.toString());
+    }
     return newFolder;
   }
 }
@@ -75,6 +79,15 @@ function saveMediaFile(carProfileId, contributorName, animalType, fileObj) {
 
   const fileId = driveFile.getId();
   const fileUrl = driveFile.getUrl();
+
+  // BUG-11 FIX: Explicitly restrict file access after upload.
+  // Without this, files inherit the folder's sharing settings and may be publicly accessible.
+  // TC-W2.6 requires files to be restricted/non-public by default.
+  try {
+    driveFile.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+  } catch (sharingErr) {
+    Logger.log('Warning: Could not set file sharing restriction: ' + sharingErr.toString());
+  }
 
   // Save reference in Media sheet
   const mediaId = generateMediaID();

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - ID Generation Module
  * Generates unique IDs for CAR profiles and other entities
  */

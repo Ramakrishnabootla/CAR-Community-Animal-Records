@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CAR Platform - Profile Module
  * Saves complete animal profiles across linked sheets
  */
@@ -174,6 +174,8 @@ function buildUniqueAnimalName(name) {
     })
     .filter(value => value > 0);
 
-  const nextIndex = Math.max(1, ...suffixes, 1) + 1;
+  // BUG-07 FIX: When no existing suffixes exist, nextIndex should start at 1 (not 2).
+  // suffixes filters for values > 0, so when empty, max should be 0, giving nextIndex = 1.
+  const nextIndex = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 1;
   return cleanName + ' (' + nextIndex + ')';
 }
