@@ -174,4 +174,45 @@
     .detail-grid { grid-template-columns: 1fr; }
     .side-by-side-grid { grid-template-columns: 1fr; }
   }
+
+  /* Form Element Inputs & Selects Styling */
+  .form-group input[type="text"],
+  .form-group input[type="date"],
+  .form-group input[type="number"],
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    font-size: 15px;
+    outline: none;
+    font-family: inherit;
+    background-color: #ffffff;
+    color: var(--text-dark);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-group input[type="text"]:focus,
+  .form-group input[type="date"]:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(45, 122, 95, 0.15);
+  }
+  .btn-gps {
+    background-color: var(--primary-light);
+    color: var(--primary-color);
+    border: 1px solid var(--primary-color);
+    padding: 8px 14px;
+    border-radius: var(--radius);
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+  }
+  .btn-gps:hover {
+    background-color: var(--primary-color);
+    color: #ffffff;
+  }
+
 </style>

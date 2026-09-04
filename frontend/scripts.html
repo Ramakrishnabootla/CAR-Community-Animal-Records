@@ -26,15 +26,18 @@
 
   // Native Client-Side HTML5 Geolocation (Zero Backend Server)
   function getContributorGPSLocation() {
-    const statusEl = document.getElementById('gpsStatusDisplay');
-    if (!statusEl) return;
+    const statusEl = document.getElementById('gpsStatusDisplay') || document.getElementById('gpsStatusMessage');
+    const coordInput = document.getElementById('gpsCoordinates') || document.getElementById('gpsLocationInput');
+    const latInput = document.getElementById('gpsLatitude');
+    const lngInput = document.getElementById('gpsLongitude');
+    const methodInput = document.getElementById('gpsCapturedMethod');
 
     if (!navigator.geolocation) {
-      statusEl.innerHTML = '<span style="color:#c5221f;">⚠️ Geolocation is not supported by your browser.</span>';
+      if (statusEl) statusEl.innerHTML = '<span style="color:#c5221f;">⚠️ Geolocation is not supported by your browser. You can enter coordinates manually.</span>';
       return;
     }
 
-    statusEl.innerHTML = '<span style="color:#2D7A5F;">📍 Requesting GPS location...</span>';
+    if (statusEl) statusEl.innerHTML = '<span style="color:#2D7A5F;">📍 Requesting GPS location permission... Please allow location access when prompted.</span>';
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -42,19 +45,27 @@
         const lng = position.coords.longitude;
         const accuracy = Math.round(position.coords.accuracy);
 
-        document.getElementById('gpsLatitude').value = lat;
-        document.getElementById('gpsLongitude').value = lng;
-        document.getElementById('gpsCoordinates').value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        document.getElementById('gpsCapturedMethod').value = 'Device GPS';
+        if (latInput) latInput.value = lat;
+        if (lngInput) lngInput.value = lng;
+        if (coordInput) coordInput.value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        if (methodInput) methodInput.value = 'Device GPS';
 
-        statusEl.innerHTML = `<span style="color:#137333; font-weight:600;">📍 Location Captured: ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${accuracy}m)</span>`;
+        if (statusEl) statusEl.innerHTML = `<span style="color:#137333; font-weight:600;">📍 Location Captured: ${lat.toFixed(5)}, ${lng.toFixed(5)} (Accuracy: ±${accuracy}m)</span>`;
       },
       (error) => {
-        console.warn('GPS location error:', error.message);
-        document.getElementById('gpsCapturedMethod').value = 'Manual Entry';
-        statusEl.innerHTML = '<span style="color:#E6A23C;">⚠️ Permission denied/timed out. Enter area manually below.</span>';
+        console.warn('GPS location error:', error.code, error.message);
+        let msg = 'Unable to retrieve location.';
+        if (error.code === 1) {
+          msg = '⚠️ Location permission denied by user/browser. Please allow location access or paste Google Maps pin manually.';
+        } else if (error.code === 2) {
+          msg = '⚠️ Position unavailable. Check device GPS settings or enter coordinates manually.';
+        } else if (error.code === 3) {
+          msg = '⚠️ GPS request timed out. Click capture again or enter manually.';
+        }
+        if (methodInput) methodInput.value = 'Manual Entry';
+        if (statusEl) statusEl.innerHTML = `<span style="color:#E6A23C; font-weight:500;">${msg}</span>`;
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }
 

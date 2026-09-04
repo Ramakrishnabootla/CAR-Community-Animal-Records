@@ -5,6 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CAR - Community Animal Records</title>
   <?!= include('frontend/styles'); ?>
+  <script>
+    /* Local File Preview Fallback (loads styles & scripts when viewing index.html locally in browser) */
+    if (window.location.protocol === 'file:' || typeof google === 'undefined') {
+      fetch('./styles.html').then(r => r.text()).then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const style = doc.querySelector('style');
+        if (style) document.head.appendChild(style);
+      }).catch(() => {});
+
+      fetch('./scripts.html').then(r => r.text()).then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const script = doc.querySelector('script');
+        if (script) {
+          const newScript = document.createElement('script');
+          newScript.textContent = script.textContent;
+          document.body.appendChild(newScript);
+        }
+      }).catch(() => {});
+    }
+  </script>
 </head>
 <body>
   <!-- Navigation Bar -->
@@ -221,14 +243,14 @@
             </div>
             <div class="form-group">
               <label>GPS Location</label>
-              <div style="display:flex; gap:8px;">
-                <input type="text" name="gpsLocation" id="gpsLocationInput" placeholder="Latitude, Longitude" style="flex:1;">
+              <div style="display:flex; gap:8px; align-items:center;">
+                <input type="text" name="gpsLocation" id="gpsCoordinates" placeholder="Latitude, Longitude (click capture to populate)" style="flex:1;">
                 <button type="button" class="btn-secondary btn-gps" onclick="getContributorGPSLocation()">📍 Capture Location</button>
               </div>
-              <input type="hidden" name="gpsLatitude" id="gpsLatitudeInput">
-              <input type="hidden" name="gpsLongitude" id="gpsLongitudeInput">
-              <input type="hidden" name="gpsCapturedMethod" id="gpsCapturedMethodInput">
-              <small id="gpsStatusMessage" style="color:#2D7A5F; display:block; margin-top:4px;"></small>
+              <input type="hidden" name="gpsLatitude" id="gpsLatitude">
+              <input type="hidden" name="gpsLongitude" id="gpsLongitude">
+              <input type="hidden" name="gpsCapturedMethod" id="gpsCapturedMethod">
+              <small id="gpsStatusDisplay" style="color:#2D7A5F; display:block; margin-top:6px; font-weight:500;"></small>
             </div>
           </div>
 
