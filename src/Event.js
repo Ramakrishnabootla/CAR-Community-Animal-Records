@@ -1,6 +1,6 @@
-/**
+﻿/**
  * CAR Platform - Event Module
- * Adds immutable event records to an existing animal profile.
+ * Adds immutable event records to an existing animal profile and logs traceable history corrections.
  */
 
 function apiSaveEvent(data) {
@@ -35,7 +35,10 @@ function apiSaveEvent(data) {
       identificationMarks: sanitizeString(event.identificationMarks) || (baseBaseline ? sanitizeString(baseBaseline.identificationMarks) : ''),
       identificationOtherDetails: sanitizeString(event.identificationOtherDetails) || (baseBaseline ? sanitizeString(baseBaseline.identificationOtherDetails) : ''),
       dateReported: normalizeDateValue(sanitizeString(event.dateReported), 'Unknown'),
-      dateOfEvent: normalizeDateValue(sanitizeString(event.dateOfEvent), 'Unknown')
+      dateOfEvent: normalizeDateValue(sanitizeString(event.dateOfEvent), 'Unknown'),
+      source: sanitizeString(event.source) || 'Self-reported',
+      verificationStatus: sanitizeString(event.verificationStatus) || 'Unverified',
+      visibility: sanitizeString(event.visibility) || 'Restricted'
     };
 
     const eventId = 'EVT-' + generateRandomString(8);
@@ -43,7 +46,7 @@ function apiSaveEvent(data) {
     const eventSheet = getSheet(eventSheetName);
     eventSheet.appendRow([
       eventId,
-      carProfileId,
+      "'" + carProfileId,
       sanitizeString(resolvedEvent.dateReported),
       sanitizeString(resolvedEvent.animalType),
       sanitizeString(resolvedEvent.animalOtherDetails),
@@ -67,19 +70,59 @@ function apiSaveEvent(data) {
       sanitizeString(resolvedEvent.eventDescription),
       sanitizeString(resolvedEvent.outcomeCurrentStatus),
       sanitizeString(resolvedEvent.additionalDetails),
+      resolvedEvent.source,
+      resolvedEvent.verificationStatus,
+      resolvedEvent.visibility,
       new Date()
     ]);
 
+    // Save linked media with animal-type subfolder & dual EventID linkage
     if (data.media && data.media.length > 0) {
-      const mediaFolder = getOrCreateMediaFolder();
-      const profileFolder = getOrCreateChildFolder(mediaFolder, carProfileId);
-      data.media.forEach(fileObj => saveMediaFile(carProfileId, profileFolder.getId(), fileObj));
+      const contributorName = data.contributorName || 'Contributor';
+      const animalType = resolvedEvent.animalType || 'Other';
+
+      data.media.forEach(fileObj => {
+        saveMediaFile(carProfileId, contributorName, animalType, {
+          ...fileObj,
+          eventId: eventId,
+          visibility: resolvedEvent.visibility,
+          source: resolvedEvent.source
+        });
+      });
     }
 
     return { success: true, eventId: eventId, carProfileId: carProfileId };
   } catch (err) {
     Logger.log('Error saving event: ' + err.toString());
     return { success: false, error: 'Server error: ' + err.toString() };
+  }
+}
+
+/**
+ * Log a traceable audit correction (W2.7)
+ * Appends edit record to AuditCorrections sheet without overwriting original data
+ */
+function apiLogCorrection(targetTable, targetRecordId, fieldName, oldValue, newValue, reason, contributorId) {
+  try {
+    const correctionId = generateCorrectionID();
+    const sheet = getSheet(CONFIG.sheetNames.auditCorrections);
+
+    sheet.appendRow([
+      correctionId,
+      sanitizeString(targetTable),
+      "'" + sanitizeString(targetRecordId),
+      sanitizeString(fieldName),
+      sanitizeString(oldValue),
+      sanitizeString(newValue),
+      sanitizeString(reason || 'Data Correction'),
+      sanitizeString(contributorId || ''),
+      new Date()
+    ]);
+
+    return { success: true, correctionId: correctionId };
+  } catch (err) {
+    Logger.log('Error logging correction: ' + err.toString());
+    return { success: false, error: err.toString() };
   }
 }
 
@@ -96,9 +139,4 @@ function validateEventData(data) {
   const event = data && data.event ? data.event : {};
   if (!event.eventType || !String(event.eventType).trim()) errors.push('Type of event is required');
   return { valid: errors.length === 0, errors: errors };
-}
-
-function getOrCreateChildFolder(parentFolder, folderName) {
-  const folders = parentFolder.getFoldersByName(folderName);
-  return folders.hasNext() ? folders.next() : parentFolder.createFolder(folderName);
 }

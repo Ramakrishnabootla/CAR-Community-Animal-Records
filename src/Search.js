@@ -1,6 +1,7 @@
-/**
+﻿/**
  * CAR Platform - Search Module
- * Retrieves complete animal profiles by exact CAR ID matches
+ * Handles exact Profile retrieval, Search-Before-Create with Locality & Attribute matching,
+ * and Admin Hold Queue management.
  */
 
 /**
@@ -15,7 +16,7 @@ function apiSearchProfile(carProfileID) {
       return { success: false, error: 'Empty Profile ID search' };
     }
 
-    const cleanId = carProfileID.trim();
+    const cleanId = String(carProfileID).trim().replace(/^'/, '');
 
     // 1. Fetch Animals sheet details
     const animalRow = findAnimalRowByProfileId(cleanId);
@@ -43,7 +44,7 @@ function apiSearchProfile(carProfileID) {
       timestamp: clientValue(animalRow[15])
     };
 
-    // 2. Fetch Contributor details
+    // 2. Fetch Contributor details (strip sensitive contact fields in public mode if requested)
     const contributorRow = findRowByID(CONFIG.sheetNames.contributors, 0, animal.contributorId);
     const contributor = contributorRow ? {
       contributorId: contributorRow[0],
@@ -63,8 +64,11 @@ function apiSearchProfile(carProfileID) {
       area: locationRow[4],
       landmark: locationRow[5],
       gpsCoordinates: locationRow[6],
-      seenRegularly: locationRow[7],
-      timestamp: clientValue(locationRow[8])
+      gpsLatitude: locationRow[7],
+      gpsLongitude: locationRow[8],
+      gpsCapturedMethod: locationRow[9],
+      seenRegularly: locationRow[10],
+      timestamp: clientValue(locationRow[11])
     } : null;
 
     // 4. Fetch Baseline Status
@@ -89,23 +93,28 @@ function apiSearchProfile(carProfileID) {
     const media = mediaRows.map(row => ({
       mediaId: row[0],
       carProfileId: row[1],
-      mediaType: row[2],
-      driveFileId: row[3],
-      driveFileURL: row[4],
-      fileName: row[5],
-      uploadTimestamp: clientValue(row[6])
+      eventId: row[2],
+      animalType: row[3],
+      mediaType: row[4],
+      driveFileId: row[5],
+      driveFileURL: row[6],
+      fileName: row[7],
+      visibility: row[8] || 'Restricted',
+      source: row[9] || 'Self-reported',
+      uploadTimestamp: clientValue(row[10])
     }));
 
     const eventRows = findEventRowsByProfileId(cleanId);
     const events = eventRows.map(row => ({
-      eventId: row[0], dateReported: row[2], animalType: row[3], animalOtherDetails: row[4],
+      eventId: row[0], carProfileId: row[1], dateReported: row[2], animalType: row[3], animalOtherDetails: row[4],
       animalName: row[5], area: row[6], landmark: row[7], googleLocationPin: row[8],
       healthCondition: row[9], healthOtherDetails: row[10], behaviour: row[11],
       behaviourOtherDetails: row[12], vaccinated: row[13], sterilised: row[14],
       identificationMarks: row[15], identificationOtherDetails: row[16], eventType: row[17],
       eventCategory: row[18], eventOtherDetails: row[19], dateOfEvent: row[20], organisationOrPerson: row[21],
       eventDescription: row[22], outcomeCurrentStatus: row[23], additionalDetails: row[24],
-      timestamp: clientValue(row[25])
+      source: row[25] || 'Self-reported', verificationStatus: row[26] || 'Unverified', visibility: row[27] || 'Restricted',
+      timestamp: clientValue(row[28])
     }));
 
     return {
@@ -128,6 +137,228 @@ function apiSearchProfile(carProfileID) {
       error: 'Server error: ' + err.toString()
     };
   }
+}
+
+/**
+ * Search Before Create (W2.1): Locality pre-filter & Match score calculation
+ * Scopes by AnimalType & Area, scores relevance (Area 30%, Marks 30%, Sex 15%, Breed 15%, Name 10%)
+ * @param {Object} query - { animalType, area, animalName, sex, breedType, identificationMarks }
+ * @return {Object} { success, matches: [{ carProfileId, animalName, animalType, sex, area, identificationMarks, matchScore, driveFileURL }] }
+ */
+function apiSearchBeforeCreate(query) {
+  try {
+    const animalType = sanitizeString(query.animalType);
+    const area = sanitizeString(query.area);
+
+    if (!animalType || !area) {
+      return { success: false, error: 'Animal Type and Area/Locality are required for search' };
+    }
+
+    const animalsSheet = getSheet(CONFIG.sheetNames.animals);
+    const animalRows = animalsSheet.getDataRange().getValues().slice(1);
+    const locationsSheet = getSheet(CONFIG.sheetNames.locations);
+    const locationRows = locationsSheet.getDataRange().getValues().slice(1);
+    const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
+    const baselineRows = baselineSheet.getDataRange().getValues().slice(1);
+    const mediaSheet = getSheet(CONFIG.sheetNames.media);
+    const mediaRows = mediaSheet.getDataRange().getValues().slice(1);
+
+    // Map locations by locationId
+    const locationMap = {};
+    locationRows.forEach(row => {
+      locationMap[row[0]] = { area: row[4], city: row[3] };
+    });
+
+    // Map baseline by carProfileId
+    const baselineMap = {};
+    baselineRows.forEach(row => {
+      baselineMap[row[1]] = { marks: row[8], health: row[2] };
+    });
+
+    // Map media by carProfileId (first image)
+    const mediaMap = {};
+    mediaRows.forEach(row => {
+      if (!mediaMap[row[1]] && row[6]) {
+        mediaMap[row[1]] = row[6];
+      }
+    });
+
+    const candidates = [];
+
+    animalRows.forEach(row => {
+      const cCarId = String(row[0]).trim();
+      const cType = String(row[2]).trim();
+      const cLocation = locationMap[row[14]] || { area: '' };
+
+      // Pre-filter: Same Animal Type
+      if (cType.toLowerCase() !== animalType.toLowerCase()) return;
+
+      const cName = String(row[1]).trim();
+      const cBreed = String(row[3]).trim();
+      const cSex = String(row[6]).trim();
+      const cArea = String(cLocation.area).trim();
+      const cBaseline = baselineMap[cCarId] || { marks: '' };
+      const cMarks = String(cBaseline.marks).trim();
+
+      // Calculate score
+      let score = 0;
+
+      // 1. Area Match (30 pts)
+      if (cArea.toLowerCase() === area.toLowerCase()) {
+        score += 30;
+      } else if (cArea.toLowerCase().includes(area.toLowerCase()) || area.toLowerCase().includes(cArea.toLowerCase())) {
+        score += 15;
+      }
+
+      // 2. Identification Marks Similarity (30 pts)
+      if (query.identificationMarks && cMarks) {
+        const markSim = calculateTextOverlap(query.identificationMarks, cMarks);
+        score += Math.round(markSim * 30);
+      }
+
+      // 3. Sex Match (15 pts)
+      if (query.sex && cSex) {
+        if (query.sex.toLowerCase() === cSex.toLowerCase()) score += 15;
+        else if (query.sex === 'Unknown' || cSex === 'Unknown') score += 5;
+      }
+
+      // 4. Breed Match (15 pts)
+      if (query.breedType && cBreed) {
+        if (query.breedType.toLowerCase() === cBreed.toLowerCase()) score += 15;
+      }
+
+      // 5. Name Match (10 pts)
+      if (query.animalName && cName) {
+        const nameSim = calculateTextOverlap(query.animalName, cName);
+        score += Math.round(nameSim * 10);
+      }
+
+      if (score >= 35) {
+        candidates.push({
+          carProfileId: cCarId,
+          animalName: cName,
+          animalType: cType,
+          breedType: cBreed,
+          sex: cSex,
+          area: cArea,
+          identificationMarks: cMarks,
+          matchScore: score,
+          driveFileURL: mediaMap[cCarId] || ''
+        });
+      }
+    });
+
+    // Sort by match score descending
+    candidates.sort((a, b) => b.matchScore - a.matchScore);
+
+    return {
+      success: true,
+      matchesFound: candidates.length > 0,
+      candidates: candidates.slice(0, 5) // Return top 5 matches
+    };
+
+  } catch (err) {
+    Logger.log('Error in apiSearchBeforeCreate: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Save "Not Sure" match submission to UncertainMatches (Hold Queue for Admin Review)
+ */
+function apiSaveUncertainMatch(data) {
+  try {
+    const holdId = generateHoldID();
+    const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
+
+    holdSheet.appendRow([
+      holdId,
+      "'" + sanitizeString(data.matchedCarProfileId),
+      data.matchScore || 50,
+      JSON.stringify(data.matchingFields || {}),
+      JSON.stringify(data.submittedData || {}),
+      data.contributorId || '',
+      'Pending Review',
+      new Date()
+    ]);
+
+    return { success: true, holdId: holdId };
+  } catch (err) {
+    Logger.log('Error saving uncertain match: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Fetch pending holds for Admin Dashboard
+ */
+function apiGetPendingHolds() {
+  try {
+    const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
+    const rows = holdSheet.getDataRange().getValues().slice(1);
+
+    const pending = rows.filter(r => r[6] === 'Pending Review').map(r => ({
+      holdId: r[0],
+      matchedCarProfileId: r[1],
+      matchScore: r[2],
+      matchingFields: tryParseJSON(r[3]),
+      submittedData: tryParseJSON(r[4]),
+      contributorId: r[5],
+      status: r[6],
+      createdAt: clientValue(r[7])
+    }));
+
+    return { success: true, holds: pending };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Admin action: Resolve Hold (Approve as new profile or Reject/Merge)
+ */
+function apiResolveHold(holdId, action, adminNotes) {
+  try {
+    const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
+    const data = holdSheet.getDataRange().getValues();
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(holdId).trim()) {
+        const newStatus = action === 'APPROVE' ? 'Approved - Created' : 'Rejected - Duplicate';
+        holdSheet.getRange(i + 1, 7).setValue(newStatus);
+
+        if (action === 'APPROVE') {
+          const submittedData = tryParseJSON(data[i][4]);
+          if (submittedData) {
+            apiSaveProfile(submittedData);
+          }
+        }
+        return { success: true, status: newStatus };
+      }
+    }
+
+    return { success: false, error: 'Hold ID not found' };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function calculateTextOverlap(str1, str2) {
+  if (!str1 || !str2) return 0;
+  const words1 = String(str1).toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const words2 = String(str2).toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  if (!words1.length || !words2.length) return 0;
+
+  let matches = 0;
+  words1.forEach(w => {
+    if (words2.includes(w)) matches++;
+  });
+
+  return matches / Math.max(words1.length, words2.length);
+}
+
+function tryParseJSON(str) {
+  try { return JSON.parse(str); } catch (e) { return {}; }
 }
 
 function clientValue(value) {
@@ -218,19 +449,12 @@ function getProfileArea(locationId) {
   return location ? location[4] : '';
 }
 
-/**
- * Helper to find a specific row in a sheet matching an ID in a specific column index
- * @param {string} sheetName - Target Sheet Name
- * @param {number} colIndex - Column Index to search (0-based)
- * @param {string} idSearch - Target ID to match
- * @return {Array|null} Row values array or null
- */
 function findRowByID(sheetName, colIndex, idSearch) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][colIndex]).trim() === idSearch) {
+    if (String(data[i][colIndex]).trim() === String(idSearch).trim()) {
       return data[i];
     }
   }
@@ -238,20 +462,13 @@ function findRowByID(sheetName, colIndex, idSearch) {
   return null;
 }
 
-/**
- * Helper to find all rows matching an ID in a specific column index
- * @param {string} sheetName - Target Sheet Name
- * @param {number} colIndex - Column Index to search (0-based)
- * @param {string} idSearch - Target ID to match
- * @return {Array[]} Array of row value arrays
- */
 function findAllRowsByID(sheetName, colIndex, idSearch) {
   const sheet = getSheet(sheetName);
   const data = sheet.getDataRange().getValues();
   const results = [];
 
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][colIndex]).trim() === idSearch) {
+    if (String(data[i][colIndex]).trim() === String(idSearch).trim()) {
       results.push(data[i]);
     }
   }
@@ -269,7 +486,7 @@ function findEventRowsByProfileId(profileId) {
     if (!sheet) return;
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
-      if (String(data[i][1] || '').trim() === profileId) {
+      if (String(data[i][1] || '').trim() === String(profileId).trim()) {
         results.push(data[i]);
       }
     }
@@ -278,10 +495,6 @@ function findEventRowsByProfileId(profileId) {
   return results;
 }
 
-/**
- * Retrieve counts statistics for the home page search stats row
- * @return {Object} Statistics count values
- */
 function apiGetSearchStats() {
   try {
     const animalsSheet = getSheet(CONFIG.sheetNames.animals);
@@ -291,23 +504,21 @@ function apiGetSearchStats() {
 
     const animalsCount = Math.max(0, animalsSheet.getLastRow() - 1);
 
-    // Distinct areas count
     const locationsData = locationsSheet.getDataRange().getValues();
     const uniqueAreas = new Set();
     for (let i = 1; i < locationsData.length; i++) {
-      if (locationsData[i][1]) {
-        uniqueAreas.add(locationsData[i][1].trim());
+      if (locationsData[i][4]) {
+        uniqueAreas.add(String(locationsData[i][4]).trim());
       }
     }
 
-    // Evidence link percentage (animals with at least one media reference)
     let percentLinked = 0;
     if (animalsCount > 0) {
       const mediaData = mediaSheet.getDataRange().getValues();
       const uniqueMediaProfileIds = new Set();
       for (let i = 1; i < mediaData.length; i++) {
         if (mediaData[i][1]) {
-          uniqueMediaProfileIds.add(mediaData[i][1].trim());
+          uniqueMediaProfileIds.add(String(mediaData[i][1]).trim());
         }
       }
 

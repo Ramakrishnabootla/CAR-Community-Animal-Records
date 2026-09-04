@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CAR Platform - Profile Module
  * Saves complete animal profiles across linked sheets
  */
@@ -31,13 +31,13 @@ function apiSaveProfile(data) {
       contributorSheet.appendRow([
         contributorId,
         sanitizeString(data.contributor.name),
-        sanitizeString(data.contributor.mobile),
+        "'" + sanitizeString(data.contributor.mobile),
         sanitizeString(data.contributor.email),
         timestamp
       ]);
     }
 
-    // 3. Save Location
+    // 3. Save Location (with GPS latitude/longitude from client-side HTML5 Geolocation)
     const locationId = generateLocationID();
     const locationSheet = getSheet(CONFIG.sheetNames.locations);
     locationSheet.appendRow([
@@ -47,7 +47,10 @@ function apiSaveProfile(data) {
       sanitizeString(data.location.city),
       sanitizeString(data.location.area),
       sanitizeString(data.location.landmark),
-      sanitizeString(data.location.gpsLocation || data.location.gpsCoordinates),
+      sanitizeString(data.location.gpsCoordinates),
+      sanitizeString(data.location.gpsLatitude),
+      sanitizeString(data.location.gpsLongitude),
+      sanitizeString(data.location.gpsCapturedMethod || 'Manual Entry'),
       sanitizeString(data.location.seenRegularly),
       timestamp
     ]);
@@ -64,7 +67,7 @@ function apiSaveProfile(data) {
 
     const animalSheet = getSheet(CONFIG.sheetNames.animals);
     animalSheet.appendRow([
-      carProfileId,
+      "'" + carProfileId,
       animalName,
       data.animal.animalType,
       sanitizeString(data.animal.breedType),
@@ -87,7 +90,7 @@ function apiSaveProfile(data) {
     const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
     baselineSheet.appendRow([
       baselineId,
-      carProfileId,
+      "'" + carProfileId,
       data.baselineStatus.healthStatus || 'Unknown',
       data.baselineStatus.vaccinationStatus || 'Unknown',
       data.baselineStatus.sterilisationStatus || 'Unknown',
@@ -100,13 +103,13 @@ function apiSaveProfile(data) {
       timestamp
     ]);
 
-    // 7. Save Media (If any uploaded photos/documents)
+    // 7. Save Media (If any uploaded photos/documents) - Now uses animal-type subfolders and renaming
     if (data.media && data.media.length > 0) {
-      const mediaFolder = getOrCreateMediaFolder();
-      const animalFolder = getOrCreateChildFolder(mediaFolder, carProfileId);
+      const contributorName = sanitizeString(data.contributor.name);
+      const animalType = data.animal.animalType || 'Other';
 
       data.media.forEach(fileObj => {
-        saveMediaFile(carProfileId, animalFolder.getId(), fileObj);
+        saveMediaFile(carProfileId, contributorName, animalType, fileObj);
       });
     }
 
@@ -139,10 +142,10 @@ function findContributorByMobile(mobile) {
   const data = sheet.getDataRange().getValues();
 
   // Clean the mobile number to compare
-  const cleanMobileSearch = mobile.replace(/[\s\-+]/g, '');
+  const cleanMobileSearch = String(mobile).replace(/[\s\-+\']/g, '');
 
   for (let i = 1; i < data.length; i++) {
-    const cleanMobileRow = String(data[i][2]).replace(/[\s\-+]/g, '');
+    const cleanMobileRow = String(data[i][2]).replace(/[\s\-+\']/g, '');
     if (cleanMobileRow === cleanMobileSearch) {
       return data[i][0]; // Return ContributorID
     }

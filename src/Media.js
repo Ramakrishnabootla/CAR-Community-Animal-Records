@@ -1,6 +1,7 @@
-/**
+﻿/**
  * CAR Platform - Media Upload Module
- * Saves uploaded digital evidence files in Google Drive folder
+ * Saves uploaded digital evidence files in Google Drive folder structured by animal type
+ * Renames files to: [CARProfileID]_[ContributorName].[ext]
  */
 
 /**
@@ -13,30 +14,65 @@ function getOrCreateMediaFolder() {
     return folders.next();
   } else {
     const newFolder = DriveApp.createFolder(CONFIG.driveFolderName);
-    newFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    // Restricted by default in Week 2
     return newFolder;
   }
 }
 
 /**
+ * Get or create animal-type subfolder (e.g. "CAR Media/Dog")
+ * @param {string} animalType - Dog, Cat, Bird, Cattle, Other
+ * @return {Folder} Subfolder object
+ */
+function getOrCreateAnimalTypeFolder(animalType) {
+  const rootFolder = getOrCreateMediaFolder();
+  const safeType = sanitizeString(animalType) || 'Other';
+  const validTypes = ['Dog', 'Cat', 'Bird', 'Cattle', 'Other'];
+  const folderName = validTypes.includes(safeType) ? safeType : 'Other';
+
+  const subfolders = rootFolder.getFoldersByName(folderName);
+  if (subfolders.hasNext()) {
+    return subfolders.next();
+  } else {
+    return rootFolder.createFolder(folderName);
+  }
+}
+
+/**
  * Decode and save media file to Google Drive and log in Media sheet
+ * Renames file to: [CARProfileID]_[ContributorName].[ext]
  * @param {string} carProfileId - CAR Profile ID to link file
- * @param {string} parentFolderId - Folder ID where to save
- * @param {Object} fileObj - Digital file object containing filename, mimeType, base64Data
+ * @param {string} contributorName - Name of contributor uploading file
+ * @param {string} animalType - Dog, Cat, Bird, Cattle, etc.
+ * @param {Object} fileObj - Digital file object (filename, mimeType, base64Data, eventId, visibility, source)
  * @return {string} Drive file ID
  */
-function saveMediaFile(carProfileId, parentFolderId, fileObj) {
-  const parentFolder = DriveApp.getFolderById(parentFolderId);
+function saveMediaFile(carProfileId, contributorName, animalType, fileObj) {
+  const targetFolder = getOrCreateAnimalTypeFolder(animalType);
+
+  // Determine file extension
+  let ext = 'jpg';
+  if (fileObj.filename && fileObj.filename.includes('.')) {
+    ext = fileObj.filename.split('.').pop();
+  } else if (fileObj.mimeType === 'image/png') {
+    ext = 'png';
+  } else if (fileObj.mimeType === 'application/pdf') {
+    ext = 'pdf';
+  }
+
+  // Clean contributor name for filename
+  const cleanContributor = sanitizeString(contributorName || 'Contributor').replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const cleanCarId = sanitizeString(carProfileId).replace(/[^a-zA-Z0-9_-]+/g, '_');
+  const newFileName = `${cleanCarId}_${cleanContributor}.${ext}`;
 
   // Decode Base64 data to Blob
   const base64Data = fileObj.base64Data.split(',')[1] || fileObj.base64Data;
   const decodedBytes = Utilities.base64Decode(base64Data);
-  const blob = Utilities.newBlob(decodedBytes, fileObj.mimeType, fileObj.filename);
+  const blob = Utilities.newBlob(decodedBytes, fileObj.mimeType, newFileName);
 
-  // Create file in folder
-  const driveFile = parentFolder.createFile(blob);
+  // Create file in animal-type subfolder
+  const driveFile = targetFolder.createFile(blob);
 
-  // Set file details
   const fileId = driveFile.getId();
   const fileUrl = driveFile.getUrl();
 
@@ -46,11 +82,15 @@ function saveMediaFile(carProfileId, parentFolderId, fileObj) {
 
   mediaSheet.appendRow([
     mediaId,
-    carProfileId,
+    "'" + carProfileId,
+    fileObj.eventId ? "'" + fileObj.eventId : '',
+    animalType || 'Other',
     fileObj.mimeType.startsWith('image/') ? 'Photo' : 'Document',
     fileId,
     fileUrl,
-    fileObj.filename,
+    newFileName,
+    fileObj.visibility || 'Restricted',
+    fileObj.source || 'Self-reported',
     new Date()
   ]);
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CAR Platform - Main Entry Point
  * Google Apps Script Web App
  */
@@ -12,7 +12,9 @@ const CONFIG = {
     locations: 'Locations',
     baselineStatus: 'BaselineStatus',
     media: 'Media',
-    events: 'Events'
+    events: 'Events',
+    uncertainMatches: 'UncertainMatches',
+    auditCorrections: 'AuditCorrections'
   },
   driveFolderName: 'CAR Media'
 };
@@ -125,14 +127,18 @@ function getSchemaHeaders(sheetName) {
         'LocationID', 'Timestamp'];
     case CONFIG.sheetNames.locations:
       return ['LocationID', 'UsualLocationType', 'State', 'City', 'Area', 'Landmark',
-        'GPSCoordinates', 'SeenRegularly', 'Timestamp'];
+        'GPSCoordinates', 'GPSLatitude', 'GPSLongitude', 'GPSCapturedMethod', 'SeenRegularly', 'Timestamp'];
     case CONFIG.sheetNames.baselineStatus:
       return ['BaselineID', 'CARProfileID', 'HealthStatus', 'VaccinationStatus',
         'SterilisationStatus', 'Behavior', 'ABCStatus', 'ABCOutcome', 'IdentificationMarks',
         'IdentificationOtherDetails', 'AdditionalDetails', 'Timestamp'];
     case CONFIG.sheetNames.media:
-      return ['MediaID', 'CARProfileID', 'MediaType', 'DriveFileID', 'DriveFileURL',
-        'FileName', 'UploadTimestamp'];
+      return ['MediaID', 'CARProfileID', 'EventID', 'AnimalType', 'MediaType', 'DriveFileID', 'DriveFileURL',
+        'FileName', 'Visibility', 'Source', 'UploadTimestamp'];
+    case CONFIG.sheetNames.uncertainMatches:
+      return ['HoldID', 'MatchedCARProfileID', 'MatchScore', 'MatchingFieldsJSON', 'SubmittedDataJSON', 'ContributorID', 'Status', 'CreatedAt'];
+    case CONFIG.sheetNames.auditCorrections:
+      return ['CorrectionID', 'TargetTable', 'TargetRecordID', 'FieldName', 'OldValue', 'NewValue', 'CorrectionReason', 'ModifiedBy', 'Timestamp'];
     case CONFIG.sheetNames.events:
       return getEventSchemaHeaders();
     default:
@@ -146,7 +152,7 @@ function getEventSchemaHeaders() {
     'HealthOtherDetails', 'Behaviour', 'BehaviourOtherDetails', 'Vaccinated',
     'Sterilised', 'IdentificationMarks', 'IdentificationOtherDetails', 'EventType',
     'EventCategory', 'EventOtherDetails', 'DateOfEvent', 'OrganisationOrPerson',
-    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Timestamp'];
+    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Source', 'VerificationStatus', 'Visibility', 'Timestamp'];
 }
 
 function isEventSheet(sheetName) {
@@ -223,7 +229,7 @@ function getSheetForSetup(sheetName) {
 
 function migrateSheetToSchema(sheet, sheetName) {
   const newHeaders = getSchemaHeaders(sheetName);
-  const values = sheet.getDataRange().getDisplayValues();
+  const values = sheet.getDataRange().getValues();
   const oldHeaders = values.length ? values[0].map(value => String(value).trim()) : [];
   const oldHeaderIndexes = {};
   oldHeaders.forEach((header, index) => { oldHeaderIndexes[normalizeHeader(header)] = index; });
@@ -247,12 +253,15 @@ function migrateSheetToSchema(sheet, sheetName) {
 
 function normalizePlainTextValue(value, header, sheetName) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return String(value);
+  if (typeof value === 'number') return "'" + String(value);
   const text = String(value).trim();
   if (!text) return '';
   const normalizedHeader = normalizeHeader(header);
   if (sheetName === CONFIG.sheetNames.contributors && (normalizedHeader === 'mobile' || normalizedHeader === 'phone')) {
-    return text.replace(/\s+/g, '');
+    return "'" + text.replace(/\s+/g, '');
+  }
+  if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
+    return "'" + text;
   }
   return text;
 }
@@ -286,32 +295,8 @@ function addMissingEntityIds(rows, headers, sheetName) {
     if (sheetName === CONFIG.sheetNames.locations) row[idIndex] = generateLocationID();
     if (sheetName === CONFIG.sheetNames.baselineStatus) row[idIndex] = generateBaselineID();
     if (sheetName === CONFIG.sheetNames.media) row[idIndex] = generateMediaID();
+    if (sheetName === CONFIG.sheetNames.uncertainMatches) row[idIndex] = generateHoldID();
+    if (sheetName === CONFIG.sheetNames.auditCorrections) row[idIndex] = generateCorrectionID();
     if (sheetName === CONFIG.sheetNames.events) row[idIndex] = 'EVT-' + generateRandomString(8);
   });
-}
-
-/**
- * Helper function to create a new Google Sheets database
- * Run this once with: clasp run-function createDatabase
- * Then copy the returned spreadsheet ID to CONFIG.spreadsheetId
- */
-function createDatabase() {
-  const ss = SpreadsheetApp.create('CAR Database');
-  const spreadsheetId = ss.getId();
-  const url = ss.getUrl();
-
-  Logger.log('CAR Database created successfully!');
-  Logger.log('Spreadsheet ID: ' + spreadsheetId);
-  Logger.log('URL: ' + url);
-  Logger.log('');
-  Logger.log('Next steps:');
-  Logger.log('1. Copy this spreadsheet ID: ' + spreadsheetId);
-  Logger.log('2. Update src/Code.js CONFIG.spreadsheetId with this ID');
-  Logger.log('3. Run: clasp push --force');
-  Logger.log('4. Run: clasp run-function testSetup');
-
-  return {
-    spreadsheetId: spreadsheetId,
-    url: url
-  };
 }
