@@ -9,6 +9,13 @@
  * @return {Object} {success: boolean, carProfileId: string, error: string}
  */
 function apiSaveProfile(data) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return { success: false, error: 'Server busy processing another profile. Please retry in a few seconds.' };
+  }
+
   try {
     // 1. Validate complete profile data
     const validationResult = validateProfileData(data);
@@ -59,22 +66,17 @@ function apiSaveProfile(data) {
     const carProfileId = generateCARProfileID();
 
     // 5. Save Animal
-    let animalName = sanitizeString(data.animal.animalName);
-    if (!animalName) {
-      animalName = 'Unknown';
-    }
-    animalName = buildUniqueAnimalName(animalName);
-
+    const animalName = buildUniqueAnimalName(data.animal.animalName || 'Unknown');
     const animalSheet = getSheet(CONFIG.sheetNames.animals);
     animalSheet.appendRow([
       "'" + carProfileId,
       animalName,
-      data.animal.animalType,
+      sanitizeString(data.animal.animalType),
       sanitizeString(data.animal.breedType),
-      data.animal.animalType === 'Dog' ? data.animal.nativeDogType : '',
+      sanitizeString(data.animal.nativeDogType),
       sanitizeString(data.animal.breedOtherDetails),
-      data.animal.sex || 'Unknown',
-      data.animal.age || 'Unknown',
+      sanitizeString(data.animal.sex),
+      sanitizeString(data.animal.age),
       sanitizeString(data.animal.caregiverAnswer),
       sanitizeString(data.animal.caregiverType),
       sanitizeString(data.animal.caregiverOtherDetails),
@@ -91,9 +93,9 @@ function apiSaveProfile(data) {
     baselineSheet.appendRow([
       baselineId,
       "'" + carProfileId,
-      data.baselineStatus.healthStatus || 'Unknown',
-      data.baselineStatus.vaccinationStatus || 'Unknown',
-      data.baselineStatus.sterilisationStatus || 'Unknown',
+      sanitizeString(data.baselineStatus.healthStatus),
+      sanitizeString(data.baselineStatus.vaccinationStatus),
+      sanitizeString(data.baselineStatus.sterilisationStatus),
       sanitizeString(data.baselineStatus.behavior),
       sanitizeString(data.baselineStatus.abcStatus),
       sanitizeString(data.baselineStatus.abcOutcome),
@@ -129,6 +131,8 @@ function apiSaveProfile(data) {
       success: false,
       error: 'Server error: ' + err.toString()
     };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
 }
 

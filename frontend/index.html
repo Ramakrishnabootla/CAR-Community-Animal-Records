@@ -5,28 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CAR - Community Animal Records</title>
   <?!= include('frontend/styles'); ?>
-  <script>
-    /* Local File Preview Fallback (only runs when viewing index.html directly from local disk or localhost) */
-    if (window.location.protocol === 'file:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      fetch('./styles.html').then(r => r.text()).then(html => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const style = doc.querySelector('style');
-        if (style) document.head.appendChild(style);
-      }).catch(() => {});
-
-      fetch('./scripts.html').then(r => r.text()).then(html => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        const script = doc.querySelector('script');
-        if (script) {
-          const newScript = document.createElement('script');
-          newScript.textContent = script.textContent;
-          document.body.appendChild(newScript);
-        }
-      }).catch(() => {});
-    }
-  </script>
 </head>
 <body>
   <!-- Navigation Bar -->
@@ -275,7 +253,7 @@
         </div>
 
         <div id="fullProfileFormSection" style="display:none;">
-          <form id="profileForm" class="profile-form">
+          <form id="profileForm" class="profile-form" onsubmit="handleProfileSubmit(event)">
           <!-- Contributor Block -->
           <div class="form-section">
             <h3>Your Information</h3>
@@ -443,7 +421,7 @@
   <!-- Page: Add Event -->
   <div id="page-event" class="page">
     <section class="section-create"><div class="container"><h2>Add an event</h2><p class="create-subtitle">Add a new record to an existing CAR profile.</p>
-      <form id="eventForm" class="profile-form">
+      <form id="eventForm" class="profile-form" onsubmit="handleEventSubmit(event)">
         <input type="hidden" name="carProfileId" id="eventCarProfileId">
         <input type="hidden" name="eventType" id="eventType" value="Vaccination or Preventive Care">
 
@@ -739,23 +717,7 @@
     </section>
   </div>
 
-  <!-- Modal: Candidate Matches (Search-Before-Create) -->
-  <div id="matchResultsModal" class="loading-overlay" style="display:none; background:rgba(0,0,0,0.7); z-index:9999;">
-    <div style="background:#fff; border-radius:12px; width:90%; max-width:850px; max-height:85vh; overflow-y:auto; padding:24px; box-shadow:0 10px 25px rgba(0,0,0,0.2); margin: auto;">
-      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:12px; margin-bottom:16px;">
-        <h3 style="margin:0; color:#1a1a1a;">Potential Matching Records Found</h3>
-        <button type="button" style="background:none; border:none; font-size:20px; cursor:pointer;" onclick="closeMatchModal()">&times;</button>
-      </div>
-      <p style="color:#555; margin-bottom:16px;">We found existing profiles in this area with matching attributes. Please check if your animal is already registered before creating a new record.</p>
-      
-      <div id="matchCandidateCards" class="match-card-grid"></div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:16px; border-top:1px solid #eee;">
-        <button type="button" class="btn-secondary" onclick="selectNotSure()">Not Sure? (Submit to Admin Queue)</button>
-        <button type="button" class="btn-primary" onclick="selectDifferentAnimal()">None of These - Create New Profile</button>
-      </div>
-    </div>
-  </div>
 
   <div id="loadingOverlay" class="loading-overlay">
     <div class="spinner"></div>

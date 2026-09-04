@@ -23,11 +23,20 @@ const CONFIG = {
  * Serves the HTML interface
  */
 function doGet(e) {
-  let template;
-  try {
-    template = HtmlService.createTemplateFromFile('frontend/index');
-  } catch (err) {
-    template = HtmlService.createTemplateFromFile('index');
+  const candidates = ['frontend/index', 'frontend\\index', 'index'];
+  let template = null;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      template = HtmlService.createTemplateFromFile(candidates[i]);
+      if (template) break;
+    } catch (err) {}
+  }
+  if (!template) {
+    try {
+      template = HtmlService.createHtmlOutputFromFile('index');
+    } catch (err2) {
+      return HtmlService.createHtmlOutput('<h3>Error: Could not load index template</h3>');
+    }
   }
   return template
       .evaluate()
@@ -40,17 +49,23 @@ function doGet(e) {
  * Include other HTML files (for styles and scripts)
  */
 function include(filename) {
-  try {
-    return HtmlService.createHtmlOutputFromFile(filename).getContent();
-  } catch (err1) {
+  const cleanName = String(filename || '').replace(/\.html$/, '').trim();
+  const baseName = cleanName.split(/[\/\\]/).pop();
+  const variations = [
+    cleanName,
+    cleanName.replace(/\//g, '\\'),
+    cleanName.replace(/\\/g, '/'),
+    baseName,
+    'frontend/' + baseName,
+    'frontend\\' + baseName
+  ];
+  for (let i = 0; i < variations.length; i++) {
     try {
-      const altName = filename.includes('/') ? filename.split('/').pop() : 'frontend/' + filename;
-      return HtmlService.createHtmlOutputFromFile(altName).getContent();
-    } catch (err2) {
-      Logger.log('Error including file ' + filename + ': ' + err2.toString());
-      return '<!-- Failed to include ' + filename + ' -->';
-    }
+      return HtmlService.createHtmlOutputFromFile(variations[i]).getContent();
+    } catch (e) {}
   }
+  Logger.log('Could not include file: ' + filename);
+  return '<!-- Include failed: ' + filename + ' -->';
 }
 
 /**
@@ -153,7 +168,7 @@ function getSchemaHeaders(sheetName) {
       return ['MediaID', 'CARProfileID', 'EventID', 'AnimalType', 'MediaType', 'DriveFileID', 'DriveFileURL',
         'FileName', 'Visibility', 'Source', 'UploadTimestamp'];
     case CONFIG.sheetNames.uncertainMatches:
-      return ['HoldID', 'MatchedCARProfileID', 'MatchScore', 'MatchingFieldsJSON', 'SubmittedDataJSON', 'ContributorID', 'Status', 'CreatedAt'];
+      return ['HoldID', 'MatchedCARProfileID', 'MatchScore', 'MatchingFieldsJSON', 'SubmittedDataJSON', 'ContributorID', 'Status', 'CreatedAt', 'AdminNotes', 'ResolvedBy', 'ResolvedAt'];
     case CONFIG.sheetNames.auditCorrections:
       return ['CorrectionID', 'TargetTable', 'TargetRecordID', 'FieldName', 'OldValue', 'NewValue', 'CorrectionReason', 'ModifiedBy', 'Timestamp'];
     case CONFIG.sheetNames.events:

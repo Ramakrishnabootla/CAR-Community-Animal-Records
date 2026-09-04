@@ -44,13 +44,11 @@ function apiSearchProfile(carProfileID) {
       timestamp: clientValue(animalRow[15])
     };
 
-    // 2. Fetch Contributor details (strip sensitive contact fields in public mode if requested)
+    // 2. Fetch Contributor details (privacy protection: strip sensitive contact fields in public searches)
     const contributorRow = findRowByID(CONFIG.sheetNames.contributors, 0, animal.contributorId);
     const contributor = contributorRow ? {
       contributorId: contributorRow[0],
       name: contributorRow[1],
-      mobile: contributorRow[2],
-      email: contributorRow[3],
       timestamp: clientValue(contributorRow[4])
     } : null;
 
@@ -341,19 +339,42 @@ function apiResolveHold(holdId, action, adminNotes) {
   try {
     const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
     const data = holdSheet.getDataRange().getValues();
+    const notes = adminNotes || '';
+    let resolvedBy = 'Admin';
+    try {
+      resolvedBy = Session.getActiveUser().getEmail() || 'Admin';
+    } catch (e) {
+      resolvedBy = 'Admin';
+    }
+    const resolvedAt = new Date();
 
     for (let i = 1; i < data.length; i++) {
       if (String(data[i][0]).trim() === String(holdId).trim()) {
-        const newStatus = action === 'APPROVE' ? 'Approved - Created' : 'Rejected - Duplicate';
-        holdSheet.getRange(i + 1, 7).setValue(newStatus);
+        let newStatus = '';
+        let carProfileId = null;
 
-        if (action === 'APPROVE') {
+        if (action === 'APPROVE' || action === 'CREATE_NEW') {
           const submittedData = tryParseJSON(data[i][4]);
-          if (submittedData) {
-            apiSaveProfile(submittedData);
+          if (!submittedData || (!submittedData.animal && !submittedData.animalType)) {
+            return { success: false, error: 'No valid submitted profile data found in hold record.' };
           }
+          const saveResult = apiSaveProfile(submittedData);
+          if (!saveResult || !saveResult.success) {
+            return { success: false, error: 'Failed to create profile: ' + (saveResult && saveResult.error ? saveResult.error : 'Unknown error') };
+          }
+          carProfileId = saveResult.carProfileId;
+          newStatus = 'Approved - Created (' + carProfileId + ')';
+        } else if (action === 'CONFIRM_SAME') {
+          newStatus = 'Resolved - Same Animal (' + String(data[i][1]).trim() + ')';
+        } else {
+          const newStatus = 'Rejected - Duplicate';
         }
-        return { success: true, status: newStatus };
+
+        holdSheet.getRange(i + 1, 7).setValue(newStatus);
+        // Ensure the row has columns for AdminNotes (9), ResolvedBy (10), ResolvedAt (11)
+        holdSheet.getRange(i + 1, 9, 1, 3).setValues([[notes, resolvedBy, resolvedAt]]);
+
+        return { success: true, status: newStatus, carProfileId: carProfileId };
       }
     }
 
