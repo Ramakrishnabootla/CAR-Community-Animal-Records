@@ -100,6 +100,7 @@ function validateLocation(location) {
 
   if (!location.area || location.area.trim().length === 0) errors.push('Area/Locality is required');
   if (!location.seenRegularly || location.seenRegularly.trim().length === 0) errors.push('Seen regularly answer is required');
+  if (!location.gpsCoordinates || location.gpsCoordinates.trim().length === 0) errors.push('GPS Location coordinates are required');
 
   return errors;
 }

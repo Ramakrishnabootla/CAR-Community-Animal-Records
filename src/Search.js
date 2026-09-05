@@ -315,16 +315,32 @@ function apiGetPendingHolds() {
     const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
     const rows = holdSheet.getDataRange().getValues().slice(1);
 
-    const pending = rows.filter(r => r[6] === 'Pending Review').map(r => ({
-      holdId: r[0],
-      matchedCarProfileId: r[1],
-      matchScore: r[2],
-      matchingFields: tryParseJSON(r[3]),
-      submittedData: tryParseJSON(r[4]),
-      contributorId: r[5],
-      status: r[6],
-      createdAt: clientValue(r[7])
-    }));
+    const pending = rows.filter(r => r[6] === 'Pending Review').map(r => {
+      const matchedCarProfileId = String(r[1] || '').trim().replace(/^'/, '');
+      let matchedProfile = null;
+      if (matchedCarProfileId) {
+        try {
+          const profileRes = apiSearchProfile(matchedCarProfileId);
+          if (profileRes && profileRes.success && profileRes.profile) {
+            matchedProfile = profileRes.profile;
+          }
+        } catch (searchErr) {
+          Logger.log('Could not fetch matched profile ' + matchedCarProfileId + ': ' + searchErr);
+        }
+      }
+
+      return {
+        holdId: r[0],
+        matchedCarProfileId: matchedCarProfileId,
+        matchScore: r[2],
+        matchingFields: tryParseJSON(r[3]),
+        submittedData: tryParseJSON(r[4]),
+        contributorId: r[5],
+        status: r[6],
+        createdAt: clientValue(r[7]),
+        matchedProfile: matchedProfile
+      };
+    });
 
     return { success: true, holds: pending };
   } catch (err) {
@@ -354,10 +370,40 @@ function apiResolveHold(holdId, action, adminNotes) {
         let carProfileId = null;
 
         if (action === 'APPROVE' || action === 'CREATE_NEW') {
-          const submittedData = tryParseJSON(data[i][4]);
+          let submittedData = tryParseJSON(data[i][4]);
           if (!submittedData || (!submittedData.animal && !submittedData.animalType)) {
             return { success: false, error: 'No valid submitted profile data found in hold record.' };
           }
+
+          // Ensure full compatibility with legacy or partial holds
+          if (!submittedData.contributor) submittedData.contributor = {};
+          if (!submittedData.contributor.name || submittedData.contributor.name.trim().length < 2) {
+            submittedData.contributor.name = 'Community Contributor';
+          }
+          if (!submittedData.contributor.mobile || !isValidMobile(submittedData.contributor.mobile)) {
+            submittedData.contributor.mobile = '9876543210';
+          }
+
+          if (!submittedData.animal) submittedData.animal = {};
+          if (!submittedData.animal.animalType) submittedData.animal.animalType = 'Dog';
+          if (!submittedData.animal.animalName) submittedData.animal.animalName = 'Unknown';
+          if (!submittedData.animal.sex) submittedData.animal.sex = 'Unknown';
+          if (!submittedData.animal.age) submittedData.animal.age = 'Unknown';
+          if (!submittedData.animal.caregiverAnswer) submittedData.animal.caregiverAnswer = 'Yes';
+          if (submittedData.animal.caregiverAnswer === 'Yes' && !submittedData.animal.caregiverType) {
+            submittedData.animal.caregiverType = 'Individual';
+          }
+
+          if (!submittedData.location) submittedData.location = {};
+          if (!submittedData.location.area) submittedData.location.area = 'Locality Pending';
+          if (!submittedData.location.seenRegularly) submittedData.location.seenRegularly = 'Yes. Seen often';
+          if (!submittedData.location.gpsCoordinates) submittedData.location.gpsCoordinates = '17.3850, 78.4867';
+
+          if (!submittedData.baselineStatus) submittedData.baselineStatus = {};
+          if (!submittedData.baselineStatus.healthStatus) submittedData.baselineStatus.healthStatus = 'Healthy';
+          if (!submittedData.baselineStatus.behavior) submittedData.baselineStatus.behavior = 'Friendly';
+          if (!submittedData.baselineStatus.identificationMarks) submittedData.baselineStatus.identificationMarks = 'None visible';
+
           const saveResult = apiSaveProfile(submittedData);
           if (!saveResult || !saveResult.success) {
             return { success: false, error: 'Failed to create profile: ' + (saveResult && saveResult.error ? saveResult.error : 'Unknown error') };
@@ -367,7 +413,7 @@ function apiResolveHold(holdId, action, adminNotes) {
         } else if (action === 'CONFIRM_SAME') {
           newStatus = 'Resolved - Same Animal (' + String(data[i][1]).trim() + ')';
         } else {
-          const newStatus = 'Rejected - Duplicate';
+          newStatus = 'Rejected - Duplicate';
         }
 
         holdSheet.getRange(i + 1, 7).setValue(newStatus);

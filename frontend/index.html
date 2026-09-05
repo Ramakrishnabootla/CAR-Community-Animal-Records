@@ -128,128 +128,236 @@
         <h2>Add to CAR</h2>
         <p class="create-subtitle">Ready to create a profile? Create an animal profile for someone you take care of or know of.</p>
 
+        <!-- Profile Success Message Banner Container -->
+        <div id="profileSuccessContainer"></div>
+
         <!-- Search-Before-Create Step 1 Container -->
-        <div class="sbc-container" style="background:#f4f9f6; border:2px solid #2D7A5F; padding:20px; border-radius:12px; margin-bottom:28px; box-shadow:0 4px 12px rgba(45,122,95,0.08);">
+        <div class="sbc-container" style="background:#f4f9f6; border:2px solid #2D7A5F; padding:24px; border-radius:12px; margin-bottom:28px; box-shadow:0 4px 14px rgba(45,122,95,0.08);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
-            <h3 style="margin:0; color:#2D7A5F; font-size:20px; font-weight:700;">&#55357;&#56589; Step 1: Search Existing Records First</h3>
-            <span style="background:#E6F4EA; color:#137333; font-size:12px; padding:4px 12px; border-radius:12px; font-weight:600;">Search-Before-Create Protocol</span>
+            <h3 style="margin:0; color:#2D7A5F; font-size:20px; font-weight:700;">🐾 Step 1: Contributor & Animal Details (Search Before Create)</h3>
+            <span style="background:#E6F4EA; color:#137333; font-size:12px; padding:4px 12px; border-radius:12px; font-weight:600;">W2.1 Protocol</span>
           </div>
-          <p style="font-size:14px; color:#555; margin-bottom:16px;">
-            Enter the animal's basic details to check if a profile already exists in your area before submitting a new record.
+          <p style="font-size:14px; color:#555; margin-bottom:20px;">
+            Please fill in your details and the animal's information. We will check existing records in your area to prevent duplicates before saving.
           </p>
 
-          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
-            <!-- Animal Type -->
-            <div class="form-group" style="margin:0;">
-              <label>Animal Type <span class="required">*</span></label>
-              <select id="sbcAnimalType" onchange="handleSbcAnimalTypeChange(this.value)">
-                <option value="">-- Select Type --</option>
-                <option value="Dog">Dog</option>
-                <option value="Cat">Cat</option>
-                <option value="Bird">Bird</option>
-                <option value="Cattle">Cattle</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <!-- Area / Locality -->
-            <div class="form-group" style="margin:0;">
-              <label>Area / Locality <span class="required">*</span></label>
-              <input type="text" id="sbcArea" placeholder="e.g., Banjara Hills">
-            </div>
-
-            <!-- Animal Name (if known) -->
-            <div class="form-group" style="margin:0;">
-              <label>Animal Name (if known)</label>
-              <input type="text" id="sbcAnimalName" placeholder="e.g., Bruno">
-            </div>
-
-            <!-- Gender / Sex -->
-            <div class="form-group" style="margin:0;">
-              <label>Gender / Sex</label>
-              <select id="sbcSex">
-                <option value="Unknown">Unknown</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </div>
-
-            <!-- Breed Type -->
-            <div class="form-group" style="margin:0;">
-              <label>Breed Type</label>
-              <select id="sbcBreedType">
-                <option value="">-- Select Breed --</option>
-                <option value="Indie / Native">Indie / Native</option>
-                <option value="Non Native Breed">Non Native Breed</option>
-                <option value="Mixed [Indie + non native]">Mixed [Indie + non native]</option>
-                <option value="Don't know">Don't know</option>
-              </select>
-            </div>
-
-            <!-- Native Breed (if applicable) -->
-            <div class="form-group conditional-field" id="sbcFieldNativeDog" style="display:none; margin:0;">
-              <label>Native Breed (if known)</label>
-              <select id="sbcNativeDogType">
-                <option value="">-- Select Native Breed --</option>
-                <option>Indian Pariah Dog (INDog)</option>
-                <option>Rajapalayam</option>
-                <option>Mudhol Hound</option>
-                <option>Kombai</option>
-                <option>Chippiparai</option>
-                <option>Gaddi Kutta</option>
-                <option>Bakharwal / Kashmiri Sheepdog (Rare)</option>
-                <option>Jonangi (Rare)</option>
-                <option>Kanni</option>
-                <option>Pandikona</option>
-                <option>Alangu Mastiff (Rare)</option>
-                <option>Don't Know</option>
-                <option>Other</option>
-              </select>
-            </div>
-
-            <!-- Caregiver Type -->
-            <div class="form-group" style="margin:0;">
-              <label>Who takes care of it?</label>
-              <select id="sbcCaregiverType">
-                <option value="">-- Select Caregiver --</option>
-                <option value="Individual">Individual</option>
-                <option value="Animal care group in the community">Animal care group in the community</option>
-                <option value="Volunteer / NGO">Volunteer / NGO</option>
-                <option value="Multiple people">Multiple people</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            <!-- Identification Marks -->
-            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
-              <label>Identification Marks (Description for matching)</label>
-              <input type="text" id="sbcIdentificationMarks" placeholder="e.g., Red collar, notched left ear, white right paw">
-            </div>
-
-            <!-- GPS Location Capture -->
-            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
-              <label>GPS Location</label>
-              <div style="display:flex; gap:8px;">
-                <input type="text" id="sbcGpsCoordinates" placeholder="Latitude, Longitude (or click capture)" style="flex:1;">
-                <button type="button" class="btn-secondary btn-gps" onclick="getSbcGPSLocation()">&#55357;&#56525; Capture Location</button>
+          <!-- Section A: Contributor Details -->
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px;">
+            <h4 style="margin-top:0; color:#2D7A5F; margin-bottom:12px; font-size:15px;">1. Your Information (Contributor)</h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+              <div class="form-group" style="margin:0;">
+                <label>Your Name <span class="required">*</span></label>
+                <input type="text" id="sbcContributorName" placeholder="e.g., Priya Sharma" required>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Mobile Number (10 digits) <span class="required">*</span></label>
+                <input type="tel" id="sbcContributorMobile" placeholder="e.g., 9876543210" required>
+              </div>
+              <div class="form-group" style="margin:0;">
+                <label>Email Address <span class="optional-text">(Optional)</span></label>
+                <input type="email" id="sbcContributorEmail" placeholder="e.g., name@example.com">
               </div>
             </div>
+          </div>
 
-            <!-- Photo Upload for Side-by-Side Verification -->
-            <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+          <!-- Section B: Animal Information -->
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px;">
+            <h4 style="margin-top:0; color:#2D7A5F; margin-bottom:12px; font-size:15px;">2. Animal Information</h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+              <!-- Animal Type -->
+              <div class="form-group" style="margin:0;">
+                <label>Animal Type <span class="required">*</span></label>
+                <select id="sbcAnimalType" onchange="handleSbcAnimalTypeChange(this.value)" required>
+                  <option value="">-- Select Type --</option>
+                  <option value="Dog">Dog</option>
+                  <option value="Cat">Cat</option>
+                  <option value="Bird">Bird</option>
+                  <option value="Cattle">Cattle</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <!-- Animal Name (if known) -->
+              <div class="form-group" style="margin:0;">
+                <label>Animal Name <span class="optional-text">(if known)</span></label>
+                <input type="text" id="sbcAnimalName" placeholder="e.g., Bruno or leave blank">
+              </div>
+
+              <!-- Gender / Sex -->
+              <div class="form-group" style="margin:0;">
+                <label>Gender / Sex <span class="required">*</span></label>
+                <select id="sbcSex" required>
+                  <option value="">-- Select Sex --</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+              </div>
+
+              <!-- Approximate Age -->
+              <div class="form-group" style="margin:0;">
+                <label>Approximate Age <span class="required">*</span></label>
+                <select id="sbcAge" required>
+                  <option value="">-- Select Age --</option>
+                  <option value="Puppy/Kitten">Puppy / Kitten</option>
+                  <option value="Adult">Adult</option>
+                  <option value="Senior">Senior</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+              </div>
+
+              <!-- Breed Type -->
+              <div class="form-group" style="margin:0;">
+                <label>Breed Type <span class="required">*</span></label>
+                <select id="sbcBreedType" onchange="handleSbcBreedTypeChange(this.value)" required>
+                  <option value="">-- Select Breed --</option>
+                  <option value="Indie / Native">Indie / Native</option>
+                  <option value="Non Native Breed">Non Native Breed</option>
+                  <option value="Mixed [Indie + non native]">Mixed [Indie + non native]</option>
+                  <option value="Don't know">Don't know</option>
+                </select>
+              </div>
+
+              <!-- Native Breed (if applicable) -->
+              <div class="form-group conditional-field" id="sbcFieldNativeDog" style="display:none; margin:0;">
+                <label>Native Breed (if known)</label>
+                <select id="sbcNativeDogType">
+                  <option value="">-- Select Native Breed --</option>
+                  <option>Indian Pariah Dog (INDog)</option>
+                  <option>Rajapalayam</option>
+                  <option>Mudhol Hound</option>
+                  <option>Kombai</option>
+                  <option>Chippiparai</option>
+                  <option>Gaddi Kutta</option>
+                  <option>Bakharwal / Kashmiri Sheepdog (Rare)</option>
+                  <option>Jonangi (Rare)</option>
+                  <option>Kanni</option>
+                  <option>Pandikona</option>
+                  <option>Alangu Mastiff (Rare)</option>
+                  <option>Don't Know</option>
+                  <option>Other</option>
+                </select>
+              </div>
+
+              <!-- Caregiver Answer -->
+              <div class="form-group" style="margin:0;">
+                <label>Does anyone regularly care for it? <span class="required">*</span></label>
+                <select id="sbcCaregiverAnswer" required>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                  <option value="Don't know">Don't know</option>
+                </select>
+              </div>
+
+              <!-- Caregiver Type -->
+              <div class="form-group" style="margin:0;">
+                <label>Who takes care of it?</label>
+                <select id="sbcCaregiverType">
+                  <option value="">-- Select Caregiver --</option>
+                  <option value="Individual">Individual</option>
+                  <option value="Animal care group in the community">Animal care group in the community</option>
+                  <option value="Volunteer / NGO">Volunteer / NGO</option>
+                  <option value="Multiple people">Multiple people</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <!-- Health Status -->
+              <div class="form-group" style="margin:0;">
+                <label>Current Health Condition <span class="required">*</span></label>
+                <select id="sbcHealthStatus" required>
+                  <option value="Healthy">Healthy</option>
+                  <option value="Injured">Injured</option>
+                  <option value="Sick">Sick</option>
+                  <option value="Under Treatment">Under Treatment</option>
+                  <option value="Old / Weak">Old / Weak</option>
+                  <option value="Needs Medical Attention">Needs Medical Attention</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+              </div>
+
+              <!-- Behaviour -->
+              <div class="form-group" style="margin:0;">
+                <label>Behaviour <span class="required">*</span></label>
+                <select id="sbcBehavior" required>
+                  <option value="Friendly">Friendly</option>
+                  <option value="Calm">Calm</option>
+                  <option value="Shy">Shy</option>
+                  <option value="Timid">Timid</option>
+                  <option value="Protective">Protective</option>
+                  <option value="Fearful">Fearful</option>
+                  <option value="Aggressive">Aggressive</option>
+                  <option value="Unable to assess">Unable to assess</option>
+                </select>
+              </div>
+
+              <!-- Identification Marks -->
+              <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+                <label>Identification Marks (Description for matching) <span class="required">*</span></label>
+                <input type="text" id="sbcIdentificationMarks" placeholder="e.g., Red collar, notched left ear, white right paw" required>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section C: Location & Mandatory GPS -->
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:16px; margin-bottom:16px;">
+            <h4 style="margin-top:0; color:#2D7A5F; margin-bottom:12px; font-size:15px;">3. Location & Mandatory GPS Pin</h4>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+              <!-- Area / Locality -->
+              <div class="form-group" style="margin:0;">
+                <label>Area / Locality <span class="required">*</span></label>
+                <input type="text" id="sbcArea" placeholder="e.g., Banjara Hills" required>
+              </div>
+
+              <!-- Seen Regularly -->
+              <div class="form-group" style="margin:0;">
+                <label>Seen regularly in the area? <span class="required">*</span></label>
+                <select id="sbcSeenRegularly" required>
+                  <option value="Yes. Seen daily">Yes. Seen daily</option>
+                  <option value="Yes. Seen often">Yes. Seen often</option>
+                  <option value="Yes. Sometimes">Yes. Sometimes</option>
+                  <option value="Seems to have moved in recently">Seems to have moved in recently</option>
+                  <option value="Stable pack member">Stable pack member</option>
+                  <option value="Seems abandoned">Seems abandoned</option>
+                  <option value="Don't know">Don't know</option>
+                </select>
+              </div>
+
+              <!-- Landmark -->
+              <div class="form-group" style="margin:0;">
+                <label>Landmark <span class="optional-text">(Optional)</span></label>
+                <input type="text" id="sbcLandmark" placeholder="e.g., Near Apollo Pharmacy">
+              </div>
+
+              <!-- GPS Location Capture (Mandatory) -->
+              <div class="form-group" style="margin:0; grid-column: 1 / -1;">
+                <label>GPS Coordinates <span class="required">* (Mandatory)</span></label>
+                <div style="display:flex; gap:8px;">
+                  <input type="text" id="sbcGpsCoordinates" placeholder="Latitude, Longitude (click capture to auto-populate)" style="flex:1;" required>
+                  <button type="button" class="btn-secondary btn-gps" onclick="getSbcGPSLocation()">📍 Capture Location</button>
+                </div>
+                <small id="sbcGpsStatusDisplay" style="color:#2D7A5F; display:block; margin-top:6px; font-weight:500;"></small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section D: Photo Upload -->
+          <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:8px; padding:16px;">
+            <h4 style="margin-top:0; color:#2D7A5F; margin-bottom:12px; font-size:15px;">4. Animal Photo (Evidence)</h4>
+            <div class="form-group" style="margin:0;">
               <label>Animal Photo <span class="optional-text">(Used for Side-by-Side Verification Cards)</span></label>
               <input type="file" id="sbcPhotoInput" accept="image/*" onchange="handleSbcPhotoSelect(event)">
               <div id="sbcPhotoPreview" style="margin-top:8px;"></div>
             </div>
           </div>
 
-          <div style="margin-top:18px; text-align:right;">
-            <button type="button" class="btn-primary" style="padding:12px 24px; font-size:16px; font-weight:600;" onclick="handleSearchBeforeCreate()">
-              &#55357;&#56589; Search & Check Matching Candidates
+          <div style="margin-top:20px; text-align:right;">
+            <button type="button" class="btn-primary" style="padding:12px 28px; font-size:16px; font-weight:600;" onclick="handleSearchBeforeCreate()">
+              🔍 Search & Check Matching Candidates
             </button>
           </div>
 
-          <div id="searchBeforeCreateResults" style="display:none; margin-top:20px;"></div>
+          <div id="searchBeforeCreateResults" style="display:none; margin-top:24px;"></div>
         </div>
 
         <div id="fullProfileFormSection" style="display:none;">
@@ -421,16 +529,60 @@
   <!-- Page: Add Event -->
   <div id="page-event" class="page">
     <section class="section-create"><div class="container"><h2>Add an event</h2><p class="create-subtitle">Add a new record to an existing CAR profile.</p>
-      <form id="eventForm" class="profile-form" onsubmit="handleEventSubmit(event)">
+      
+      <!-- Event Success Message Banner Container -->
+      <div id="eventSuccessContainer"></div>
+
+      <form id="eventForm" class="profile-form" onsubmit="handleEventSubmit(event)" novalidate>
         <input type="hidden" name="carProfileId" id="eventCarProfileId">
         <input type="hidden" name="eventType" id="eventType" value="Vaccination or Preventive Care">
 
         <div class="form-section">
-          <h3>Event</h3>
-          <div class="event-kind-toggle" style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
-            <button type="button" class="btn-secondary event-kind-button active" data-event-kind="Vaccination or Preventive Care">Vaccination or Preventive Care</button>
-            <button type="button" class="btn-secondary event-kind-button" data-event-kind="Medical Treatment">Medical Treatment</button>
-            <button type="button" class="btn-secondary event-kind-button" data-event-kind="Sterilization">Sterilization</button>
+          <h3>Select Event Type</h3>
+          <div class="event-kind-toggle">
+            <button type="button" id="btnEventVaccination" class="event-kind-button active" data-event-kind="Vaccination or Preventive Care" onclick="switchEventTab('Vaccination or Preventive Care')">💉 Vaccination or Preventive Care</button>
+            <button type="button" id="btnEventMedical" class="event-kind-button" data-event-kind="Medical Treatment" onclick="switchEventTab('Medical Treatment')">🩺 Medical Treatment</button>
+            <button type="button" id="btnEventSterilization" class="event-kind-button" data-event-kind="Sterilization" onclick="switchEventTab('Sterilization')">✂️ Sterilization</button>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h3>Event Location & Verification</h3>
+          <div class="form-group">
+            <label>GPS Location <span class="required">* (Mandatory)</span></label>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" name="eventGpsLocation" id="eventGpsCoordinates" required placeholder="Latitude, Longitude (click capture to auto-populate)" style="flex:1;">
+              <button type="button" class="btn-secondary btn-gps" onclick="getEventGPSLocation()">📍 Capture Location</button>
+            </div>
+            <small id="eventGpsStatusDisplay" style="color:#2D7A5F; display:block; margin-top:6px; font-weight:500;"></small>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+            <div class="form-group">
+              <label>Date Precision (W2.6)</label>
+              <select name="eventDatePrecision" id="eventDatePrecision">
+                <option value="Exact">Exact Date</option>
+                <option value="Approximate">Approximate</option>
+                <option value="Month-Year">Month-Year</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Information Source (W2.5)</label>
+              <select name="eventSource" id="eventSource">
+                <option value="Self-reported">Self-reported</option>
+                <option value="Community Caregiver">Community Caregiver</option>
+                <option value="Vet Clinic">Vet Clinic</option>
+                <option value="Volunteer / NGO">Volunteer / NGO</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Verification Status (W2.5)</label>
+              <select name="eventVerificationStatus" id="eventVerificationStatus">
+                <option value="Unverified">Unverified</option>
+                <option value="Vet Verified">Vet Verified</option>
+                <option value="Community Verified">Community Verified</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -718,6 +870,22 @@
   </div>
 
 
+
+  <!-- Modal: Hold Side-by-Side Comparison -->
+  <div id="holdComparisonModal" class="modal-overlay" style="display:none;">
+    <div class="modal-content-wide">
+      <div class="modal-header">
+        <h3 id="holdModalTitle">Side-by-Side Review: Submitted Record vs Existing Profile</h3>
+        <button type="button" class="btn-modal-close" onclick="closeHoldComparisonModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="holdModalBody">
+        <!-- Dynamically injected comparison content -->
+      </div>
+      <div class="modal-footer" id="holdModalFooter">
+        <!-- Dynamically injected action buttons -->
+      </div>
+    </div>
+  </div>
 
   <div id="loadingOverlay" class="loading-overlay">
     <div class="spinner"></div>

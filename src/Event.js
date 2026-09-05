@@ -4,6 +4,13 @@
  */
 
 function apiSaveEvent(data) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return { success: false, error: 'Server busy processing another request. Please retry in a few seconds.' };
+  }
+
   try {
     const validation = validateEventData(data);
     if (!validation.valid) {
@@ -95,6 +102,10 @@ function apiSaveEvent(data) {
   } catch (err) {
     Logger.log('Error saving event: ' + err.toString());
     return { success: false, error: 'Server error: ' + err.toString() };
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {}
   }
 }
 
@@ -138,5 +149,6 @@ function validateEventData(data) {
   if (!data || !data.carProfileId || !String(data.carProfileId).trim()) errors.push('CAR Profile ID is required');
   const event = data && data.event ? data.event : {};
   if (!event.eventType || !String(event.eventType).trim()) errors.push('Type of event is required');
+  if (!event.googleLocationPin || !String(event.googleLocationPin).trim()) errors.push('GPS Location (coordinates) is required');
   return { valid: errors.length === 0, errors: errors };
 }
