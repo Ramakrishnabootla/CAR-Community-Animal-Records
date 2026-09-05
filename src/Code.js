@@ -12,9 +12,7 @@ const CONFIG = {
     locations: 'Locations',
     baselineStatus: 'BaselineStatus',
     media: 'Media',
-    events: 'Events',
-    uncertainMatches: 'UncertainMatches',
-    auditCorrections: 'AuditCorrections'
+    events: 'Events'
   },
   driveFolderName: 'CAR Media'
 };
@@ -23,25 +21,9 @@ const CONFIG = {
  * Serves the HTML interface
  */
 function doGet(e) {
-  const candidates = ['frontend/index', 'frontend\\index', 'index'];
-  let template = null;
-  for (let i = 0; i < candidates.length; i++) {
-    try {
-      template = HtmlService.createTemplateFromFile(candidates[i]);
-      if (template) break;
-    } catch (err) {}
-  }
-  if (!template) {
-    try {
-      template = HtmlService.createHtmlOutputFromFile('index');
-    } catch (err2) {
-      return HtmlService.createHtmlOutput('<h3>Error: Could not load index template</h3>');
-    }
-  }
-  return template
+  return HtmlService.createTemplateFromFile('frontend/index')
       .evaluate()
       .setTitle('CAR - Community Animal Records')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -49,23 +31,7 @@ function doGet(e) {
  * Include other HTML files (for styles and scripts)
  */
 function include(filename) {
-  const cleanName = String(filename || '').replace(/\.html$/, '').trim();
-  const baseName = cleanName.split(/[\/\\]/).pop();
-  const variations = [
-    cleanName,
-    cleanName.replace(/\//g, '\\'),
-    cleanName.replace(/\\/g, '/'),
-    baseName,
-    'frontend/' + baseName,
-    'frontend\\' + baseName
-  ];
-  for (let i = 0; i < variations.length; i++) {
-    try {
-      return HtmlService.createHtmlOutputFromFile(variations[i]).getContent();
-    } catch (e) {}
-  }
-  Logger.log('Could not include file: ' + filename);
-  return '<!-- Include failed: ' + filename + ' -->';
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
 /**
@@ -159,18 +125,14 @@ function getSchemaHeaders(sheetName) {
         'LocationID', 'Timestamp'];
     case CONFIG.sheetNames.locations:
       return ['LocationID', 'UsualLocationType', 'State', 'City', 'Area', 'Landmark',
-        'GPSCoordinates', 'GPSLatitude', 'GPSLongitude', 'GPSCapturedMethod', 'SeenRegularly', 'Timestamp'];
+        'GPSCoordinates', 'SeenRegularly', 'Timestamp'];
     case CONFIG.sheetNames.baselineStatus:
       return ['BaselineID', 'CARProfileID', 'HealthStatus', 'VaccinationStatus',
         'SterilisationStatus', 'Behavior', 'ABCStatus', 'ABCOutcome', 'IdentificationMarks',
         'IdentificationOtherDetails', 'AdditionalDetails', 'Timestamp'];
     case CONFIG.sheetNames.media:
-      return ['MediaID', 'CARProfileID', 'EventID', 'AnimalType', 'MediaType', 'DriveFileID', 'DriveFileURL',
-        'FileName', 'Visibility', 'Source', 'UploadTimestamp'];
-    case CONFIG.sheetNames.uncertainMatches:
-      return ['HoldID', 'MatchedCARProfileID', 'MatchScore', 'MatchingFieldsJSON', 'SubmittedDataJSON', 'ContributorID', 'Status', 'CreatedAt', 'AdminNotes', 'ResolvedBy', 'ResolvedAt'];
-    case CONFIG.sheetNames.auditCorrections:
-      return ['CorrectionID', 'TargetTable', 'TargetRecordID', 'FieldName', 'OldValue', 'NewValue', 'CorrectionReason', 'ModifiedBy', 'Timestamp'];
+      return ['MediaID', 'CARProfileID', 'MediaType', 'DriveFileID', 'DriveFileURL',
+        'FileName', 'UploadTimestamp'];
     case CONFIG.sheetNames.events:
       return getEventSchemaHeaders();
     default:
@@ -184,7 +146,7 @@ function getEventSchemaHeaders() {
     'HealthOtherDetails', 'Behaviour', 'BehaviourOtherDetails', 'Vaccinated',
     'Sterilised', 'IdentificationMarks', 'IdentificationOtherDetails', 'EventType',
     'EventCategory', 'EventOtherDetails', 'DateOfEvent', 'OrganisationOrPerson',
-    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Source', 'VerificationStatus', 'Visibility', 'Timestamp'];
+    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Timestamp'];
 }
 
 function isEventSheet(sheetName) {
@@ -210,9 +172,8 @@ function getAllEventSheetNames() {
 /**
  * Test function to verify setup
  */
-function testSetup() {
-  const report = [];
-  const eventTypes = [
+function getConfiguredEventTypes() {
+  return [
     'Vaccination or Preventive Care',
     'Medical Treatment',
     'Sterilization',
@@ -230,6 +191,11 @@ function testSetup() {
     'Death',
     'Other Events Not Listed'
   ];
+}
+
+function testSetup() {
+  const report = [];
+  const eventTypes = getConfiguredEventTypes();
 
   Object.values(CONFIG.sheetNames).forEach(sheetName => {
     const sheet = getSheetForSetup(sheetName);
@@ -240,6 +206,9 @@ function testSetup() {
 
   eventTypes.forEach(eventType => {
     const sheetName = getEventSheetName(eventType);
+    if (!getSheetForSetup(sheetName)) {
+      return;
+    }
     const sheet = getSheetForSetup(sheetName);
     const result = migrateSheetToSchema(sheet, sheetName);
     report.push({ sheet: sheetName, rows: result.rows, columns: getSchemaHeaders(sheetName).length, migrated: result.migrated });
@@ -261,7 +230,7 @@ function getSheetForSetup(sheetName) {
 
 function migrateSheetToSchema(sheet, sheetName) {
   const newHeaders = getSchemaHeaders(sheetName);
-  const values = sheet.getDataRange().getValues();
+  const values = sheet.getDataRange().getDisplayValues();
   const oldHeaders = values.length ? values[0].map(value => String(value).trim()) : [];
   const oldHeaderIndexes = {};
   oldHeaders.forEach((header, index) => { oldHeaderIndexes[normalizeHeader(header)] = index; });
@@ -285,24 +254,12 @@ function migrateSheetToSchema(sheet, sheetName) {
 
 function normalizePlainTextValue(value, header, sheetName) {
   if (value === null || value === undefined) return '';
-  // BUG-15 FIX: Date objects should never get the apostrophe prefix. Only convert to ISO string.
-  if (value instanceof Date) return value.toISOString();
-  // Only prepend apostrophe for numeric values that are ID/phone fields, not all numbers.
-  if (typeof value === 'number') {
-    const normalizedHeader = normalizeHeader(header);
-    if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
-      return "'" + String(value);
-    }
-    return String(value); // Return plain string for all other numbers (e.g. scores, counts)
-  }
+  if (typeof value === 'number') return String(value);
   const text = String(value).trim();
   if (!text) return '';
   const normalizedHeader = normalizeHeader(header);
   if (sheetName === CONFIG.sheetNames.contributors && (normalizedHeader === 'mobile' || normalizedHeader === 'phone')) {
-    return "'" + text.replace(/\s+/g, '');
-  }
-  if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
-    return "'" + text;
+    return text.replace(/\s+/g, '');
   }
   return text;
 }
@@ -336,8 +293,32 @@ function addMissingEntityIds(rows, headers, sheetName) {
     if (sheetName === CONFIG.sheetNames.locations) row[idIndex] = generateLocationID();
     if (sheetName === CONFIG.sheetNames.baselineStatus) row[idIndex] = generateBaselineID();
     if (sheetName === CONFIG.sheetNames.media) row[idIndex] = generateMediaID();
-    if (sheetName === CONFIG.sheetNames.uncertainMatches) row[idIndex] = generateHoldID();
-    if (sheetName === CONFIG.sheetNames.auditCorrections) row[idIndex] = generateCorrectionID();
     if (sheetName === CONFIG.sheetNames.events) row[idIndex] = 'EVT-' + generateRandomString(8);
   });
+}
+
+/**
+ * Helper function to create a new Google Sheets database
+ * Run this once with: clasp run-function createDatabase
+ * Then copy the returned spreadsheet ID to CONFIG.spreadsheetId
+ */
+function createDatabase() {
+  const ss = SpreadsheetApp.create('CAR Database');
+  const spreadsheetId = ss.getId();
+  const url = ss.getUrl();
+
+  Logger.log('CAR Database created successfully!');
+  Logger.log('Spreadsheet ID: ' + spreadsheetId);
+  Logger.log('URL: ' + url);
+  Logger.log('');
+  Logger.log('Next steps:');
+  Logger.log('1. Copy this spreadsheet ID: ' + spreadsheetId);
+  Logger.log('2. Update src/Code.js CONFIG.spreadsheetId with this ID');
+  Logger.log('3. Run: clasp push --force');
+  Logger.log('4. Run: clasp run-function testSetup');
+
+  return {
+    spreadsheetId: spreadsheetId,
+    url: url
+  };
 }

@@ -65,8 +65,9 @@ function carIDExists(carId) {
   const sheet = getSheet(CONFIG.sheetNames.animals);
   const data = sheet.getDataRange().getValues();
 
+  // Skip header row (index 0)
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]).trim() === String(carId).trim()) {
+    if (data[i][0] === carId) {
       return true;
     }
   }
@@ -74,26 +75,34 @@ function carIDExists(carId) {
   return false;
 }
 
+/**
+ * Generate Contributor ID in format: CON-XXXXX
+ * @return {string} Unique Contributor ID
+ */
 function generateContributorID() {
   return 'CON-' + generateRandomString(5);
 }
 
+/**
+ * Generate Location ID in format: LOC-XXXXX
+ * @return {string} Unique Location ID
+ */
 function generateLocationID() {
   return 'LOC-' + generateRandomString(5);
 }
 
+/**
+ * Generate Baseline ID in format: BAS-XXXXX
+ * @return {string} Unique Baseline ID
+ */
 function generateBaselineID() {
   return 'BAS-' + generateRandomString(5);
 }
 
+/**
+ * Generate Media ID in format: MED-XXXXX
+ * @return {string} Unique Media ID
+ */
 function generateMediaID() {
   return 'MED-' + generateRandomString(5);
-}
-
-function generateHoldID() {
-  return 'HLD-' + generateRandomString(5);
-}
-
-function generateCorrectionID() {
-  return 'COR-' + generateRandomString(5);
 }

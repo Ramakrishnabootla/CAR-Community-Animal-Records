@@ -1,13 +1,10 @@
 <script>
-  // Global application state
+  // Global state
   let uploadedFiles = [];
-  let sbcUploadedFiles = [];
   let eventUploadedFiles = [];
-  let sterilizationUploadedFiles = [];
-  let isSubmitting = false;
-  let cachedPendingHolds = [];
+  let profileRecords = {};
 
-  // --- 1. Page Navigation --------------------------------------------------------
+  // Page navigation
   function showPage(pageName) {
     const pages = document.querySelectorAll('.page');
     pages.forEach(page => page.classList.remove('active'));
@@ -15,1326 +12,699 @@
     const targetPage = document.getElementById(`page-${pageName}`);
     if (targetPage) {
       targetPage.classList.add('active');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
 
+      // Load stats when showing search page
       if (pageName === 'search') {
         loadSearchStats();
         loadProfiles();
-      } else if (pageName === 'admin') {
-        loadAdminHolds();
-      } else if (pageName === 'event') {
-        switchEventTab('Vaccination or Preventive Care');
       }
     }
   }
 
-  // --- 2. Geolocation Helpers (Mandatory GPS across all forms) -------------------
-  function getSbcGPSLocation() {
-    captureGPS('sbcGpsCoordinates', null, null, null, 'sbcGpsStatusDisplay');
+  // Conditional field logic for animal type
+  function handleAnimalTypeChange(value) {
+    const nativeDogField = document.getElementById('fieldNativeDogType');
+    const nativeDogSelect = document.querySelector('[name="nativeDogType"]');
+    const breedType = document.querySelector('[name="breedType"]');
+    const breedOtherField = document.getElementById('fieldBreedOther');
+
+    if (value === 'Dog') {
+      nativeDogField.style.display = 'block';
+      nativeDogSelect.required = true;
+      breedType.required = true;
+    } else if (value === 'Other') {
+      nativeDogField.style.display = 'none';
+      nativeDogSelect.required = false;
+      breedType.required = false;
+    } else {
+      nativeDogField.style.display = 'none';
+      nativeDogSelect.required = false;
+      breedType.required = false;
+    }
+    breedOtherField.style.display = 'none';
   }
 
-  function getContributorGPSLocation() {
-    captureGPS('gpsCoordinates', 'gpsLatitude', 'gpsLongitude', 'gpsCapturedMethod', 'gpsStatusDisplay');
+  function handleEventTypeChange(value) {
+    const selectedEvent = value || document.getElementById('eventType')?.value || 'Vaccination or Preventive Care';
+    const eventTypeInput = document.getElementById('eventType');
+    if (eventTypeInput) eventTypeInput.value = selectedEvent;
+
+    const panels = document.querySelectorAll('.event-detail-panel');
+    panels.forEach(panel => {
+      const isVisible = panel.dataset.eventPanel === selectedEvent;
+      panel.style.display = isVisible ? 'block' : 'none';
+      panel.querySelectorAll('input, select, textarea').forEach(input => {
+        input.disabled = !isVisible;
+        if (!isVisible) {
+          if (input.type === 'checkbox') {
+            input.checked = false;
+          } else {
+            input.value = '';
+          }
+        }
+      });
+    });
+
+    const buttons = document.querySelectorAll('.event-kind-button');
+    buttons.forEach(button => {
+      const isActive = button.dataset.eventKind === selectedEvent;
+      button.classList.toggle('active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
   }
 
-  function getEventGPSLocation() {
-    captureGPS('eventGpsCoordinates', null, null, null, 'eventGpsStatusDisplay');
+  function setFormValue(selector, value) {
+    const element = document.querySelector(selector);
+    if (!element || value === null || value === undefined || value === '') return;
+    const normalized = String(value).trim();
+    if (element.tagName === 'SELECT') {
+      const option = [...element.options].find(opt => opt.value.toLowerCase() === normalized.toLowerCase());
+      if (option) {
+        element.value = option.value;
+      } else {
+        element.value = normalized;
+      }
+    } else {
+      element.value = normalized;
+    }
   }
 
-  function captureGPS(coordInputId, latInputId, lngInputId, methodInputId, statusDisplayId) {
-    const coordInput = document.getElementById(coordInputId);
-    const latInput = latInputId ? document.getElementById(latInputId) : null;
-    const lngInput = lngInputId ? document.getElementById(lngInputId) : null;
-    const methodInput = methodInputId ? document.getElementById(methodInputId) : null;
-    const statusEl = statusDisplayId ? document.getElementById(statusDisplayId) : null;
+  function handleCaregiverChange(value) {
+    const show = value === 'Yes';
+    setFieldVisibility('fieldCaregiverWho', show);
+    setFieldVisibility('fieldCareProvided', show);
+    if (!show) {
+      document.querySelector('[name="caregiverType"]').value = '';
+      document.querySelector('[name="caregiverOtherDetails"]').value = '';
+      document.querySelector('[name="careProvided"]').value = '';
+      document.querySelector('[name="careOtherDetails"]').value = '';
+      setFieldVisibility('fieldCaregiverOther', false);
+      setFieldVisibility('fieldCareOther', false);
+    }
+  }
 
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser. Please enter latitude, longitude manually.');
+  function handleBreedTypeChange(value) {
+    setFieldVisibility('fieldBreedOther', false);
+  }
+
+  function handleNativeBreedChange(value) {
+    setFieldVisibility('fieldBreedOther', value === 'Other');
+  }
+
+  function handleCaregiverTypeChange(value) {
+    setFieldVisibility('fieldCaregiverOther', value === 'Other');
+  }
+
+  function handleCareTypeChange(value) {
+    setFieldVisibility('fieldCareOther', value === 'Other');
+  }
+
+  function setFieldVisibility(fieldId, visible) {
+    const field = document.getElementById(fieldId);
+    if (field) field.style.display = visible ? 'block' : 'none';
+  }
+
+  // File upload handling
+  function handleFileSelect(event) {
+    const files = event.target.files;
+    const fileListDiv = document.getElementById('fileList');
+
+    if (uploadedFiles.length + files.length > 5) {
+      alert('Upload up to 5 files.');
+      event.target.value = '';
       return;
     }
 
-    if (coordInput) coordInput.placeholder = 'GPS: Requesting location...';
-    if (statusEl) statusEl.innerHTML = '<span style="color:#2D7A5F;">📍 Requesting location permission...</span>';
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > 10 * 1024 * 1024) {
+        alert(file.name + ' exceeds the 10 MB limit.');
+        continue;
+      }
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        const accuracy = Math.round(position.coords.accuracy);
-
-        if (coordInput) coordInput.value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-        if (latInput) latInput.value = lat;
-        if (lngInput) lngInput.value = lng;
-        if (methodInput) methodInput.value = 'Device GPS';
-        if (statusEl) {
-          statusEl.innerHTML = `<span style="color:#137333; font-weight:600;">✅ GPS Captured: ${lat.toFixed(5)}, ${lng.toFixed(5)} (+/-${accuracy}m)</span>`;
-        }
-      },
-      (error) => {
-        console.warn('GPS error:', error.message);
-        if (coordInput) coordInput.placeholder = 'Latitude, Longitude (e.g. 17.38504, 78.48667)';
-        if (methodInput) methodInput.value = 'Manual Entry';
-        if (statusEl) {
-          statusEl.innerHTML = '<span style="color:#c5221f;">⚠️ Could not get device GPS: ' + error.message + '. Please enter coordinates manually.</span>';
-        }
-      },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-    );
-  }
-
-  // --- 3. Image URL Resolution --------------------------------------------------
-  function getDirectDriveImageUrl(fileIdOrUrl) {
-    if (!fileIdOrUrl) return '';
-    const str = String(fileIdOrUrl).trim();
-    if (str.startsWith('data:image')) return str;
-    let fileId = str;
-    if (str.includes('id=')) {
-      fileId = str.split('id=')[1].split('&')[0];
-    } else if (str.includes('/d/')) {
-      fileId = str.split('/d/')[1].split('/')[0];
-    }
-    if (/^[a-zA-Z0-9_-]{20,}$/.test(fileId)) {
-      return 'https://lh3.googleusercontent.com/d/' + fileId;
-    }
-    return str;
-  }
-
-  // --- 4. Search-Before-Create (Step 1) -----------------------------------------
-  function handleSbcAnimalTypeChange(val) {
-    const field = document.getElementById('sbcFieldNativeDog');
-    if (field) field.style.display = (val === 'Dog') ? '' : 'none';
-  }
-
-  function handleSbcBreedTypeChange(val) {
-    const field = document.getElementById('sbcFieldNativeDog');
-    const animalType = document.getElementById('sbcAnimalType')?.value;
-    if (field) {
-      field.style.display = (animalType === 'Dog' && val === 'Indie / Native') ? '' : 'none';
-    }
-  }
-
-  function handleSbcPhotoSelect(event) {
-    const files = Array.from(event.target.files);
-    const previewEl = document.getElementById('sbcPhotoPreview');
-    if (previewEl) previewEl.innerHTML = '';
-    sbcUploadedFiles = [];
-
-    for (const file of files) {
+      // Convert file to base64
       const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64Data = e.target.result;
-        sbcUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data, visibility: 'Restricted', source: 'Self-reported' });
-        if (previewEl) {
-          previewEl.innerHTML += `
-            <div style="display:inline-block; margin-right:8px; text-align:center;">
-              <img src="${base64Data}" style="width:80px; height:80px; object-fit:cover; border-radius:6px; border:2px solid #2D7A5F;" />
-              <div style="font-size:11px; color:#555; max-width:80px; overflow:hidden; text-overflow:ellipsis;">${file.name}</div>
-            </div>
-          `;
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  }
-
-  function handleSearchBeforeCreate() {
-    // Hide previous success or result containers
-    const successContainer = document.getElementById('profileSuccessContainer');
-    if (successContainer) successContainer.innerHTML = '';
-
-    const name = document.getElementById('sbcContributorName')?.value?.trim();
-    const mobile = document.getElementById('sbcContributorMobile')?.value?.trim();
-    const animalType = document.getElementById('sbcAnimalType')?.value?.trim();
-    const sex = document.getElementById('sbcSex')?.value?.trim();
-    const age = document.getElementById('sbcAge')?.value?.trim();
-    const breedType = document.getElementById('sbcBreedType')?.value?.trim();
-    const area = document.getElementById('sbcArea')?.value?.trim();
-    const gps = document.getElementById('sbcGpsCoordinates')?.value?.trim();
-    const health = document.getElementById('sbcHealthStatus')?.value?.trim();
-    const behavior = document.getElementById('sbcBehavior')?.value?.trim();
-    const marks = document.getElementById('sbcIdentificationMarks')?.value?.trim();
-    const animalName = document.getElementById('sbcAnimalName')?.value?.trim();
-
-    // Validation checks for mandatory fields
-    if (!name || name.length < 2) {
-      alert('Please enter your name (Contributor Name, minimum 2 characters).');
-      document.getElementById('sbcContributorName')?.focus();
-      return;
-    }
-    if (!mobile || !/^[0-9]{10}$|^[0-9]{12}$/.test(mobile.replace(/[\s\-+]/g, ''))) {
-      alert('Please enter a valid 10-digit mobile number.');
-      document.getElementById('sbcContributorMobile')?.focus();
-      return;
-    }
-    if (!animalType) {
-      alert('Please select Animal Type.');
-      document.getElementById('sbcAnimalType')?.focus();
-      return;
-    }
-    if (!sex) {
-      alert('Please select Gender / Sex.');
-      document.getElementById('sbcSex')?.focus();
-      return;
-    }
-    if (!age) {
-      alert('Please select Approximate Age.');
-      document.getElementById('sbcAge')?.focus();
-      return;
-    }
-    if (!breedType) {
-      alert('Please select Breed Type.');
-      document.getElementById('sbcBreedType')?.focus();
-      return;
-    }
-    if (!marks) {
-      alert('Please enter Identification Marks or description.');
-      document.getElementById('sbcIdentificationMarks')?.focus();
-      return;
-    }
-    if (!area) {
-      alert('Please enter Area / Locality.');
-      document.getElementById('sbcArea')?.focus();
-      return;
-    }
-    if (!gps) {
-      alert('GPS Location is mandatory. Please click "📍 Capture Location" or enter coordinates manually.');
-      document.getElementById('sbcGpsCoordinates')?.focus();
-      return;
-    }
-
-    const resultsContainer = document.getElementById('searchBeforeCreateResults');
-    resultsContainer.innerHTML = '<div style="padding:16px; color:#2D7A5F; font-weight:600;">🔍 Searching candidate profiles in ' + area + '...</div>';
-    resultsContainer.style.display = 'block';
-
-    google.script.run
-      .withSuccessHandler((response) => {
-        if (!response || !response.success) {
-          const errMsg = (response && response.error) ? response.error : 'Search failed or returned empty response.';
-          resultsContainer.innerHTML = `<div class="form-message error">${errMsg}</div>`;
-          return;
-        }
-
-        if (!response.matchesFound || response.candidates.length === 0) {
-          resultsContainer.innerHTML = `
-            <div style="background:#E6F4EA; border:1px solid #C2E7CD; padding:18px; border-radius:10px; margin-bottom:16px;">
-              <strong style="color:#137333; font-size:16px;">✅ No Matching Animal Found in "${area}"!</strong>
-              <p style="margin-top:6px; color:#333; font-size:14px;">All required details are complete. You can create the new profile immediately or review additional fields.</p>
-              <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-                <button type="button" class="btn-primary" style="padding:10px 22px; font-weight:700;" onclick="handleDirectCreateFromSbc()">
-                  🎉 Save & Create Profile Now
-                </button>
-                <button type="button" class="btn-secondary" onclick="selectDifferentAnimal()">
-                  Edit / Add Optional Details First
-                </button>
-              </div>
-            </div>
-          `;
-          autoFillProfileFormFromSbc();
-          return;
-        }
-
-        // Render Match Comparison Cards with Side-by-Side Verification
-        let userPhotoHtml = '';
-        if (sbcUploadedFiles.length > 0 && sbcUploadedFiles[0].base64Data) {
-          userPhotoHtml = `
-            <div style="background:#f9f9f9; border:1px solid #ddd; padding:12px; border-radius:8px; margin-bottom:14px; text-align:center;">
-              <strong style="font-size:13px; color:#555;">📸 Your Submitted Photo (Side-by-Side Comparison)</strong><br>
-              <img src="${sbcUploadedFiles[0].base64Data}" style="max-height:140px; max-width:100%; border-radius:6px; margin-top:6px;" />
-            </div>
-          `;
-        }
-
-        let html = `
-          <div style="background:#FFF3E0; border:1px solid #FFE0B2; padding:16px; border-radius:8px; margin-bottom:16px;">
-            <strong style="color:#D97706; font-size:16px;">⚠️ Potential Candidate Matches Found in ${area}!</strong>
-            <p style="font-size:14px; margin-top:4px; color:#555;">Compare candidate details side-by-side before deciding whether to append an event, place on hold for review, or create a new profile.</p>
-          </div>
-          ${userPhotoHtml}
-          <div class="match-card-grid">
-        `;
-
-        response.candidates.forEach(c => {
-          const isHigh = c.matchScore >= 70;
-          const directImgUrl = getDirectDriveImageUrl(c.driveFileURL);
-          html += `
-            <div class="match-card ${isHigh ? 'high-match' : 'med-match'}" style="background:#fff; border:1px solid #ddd; border-radius:8px; padding:16px;">
-              <span class="match-score-badge" style="background:${isHigh ? '#c5221f' : '#f59e0b'}; color:#fff; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:700;">${c.matchScore}% Match</span>
-              <h4 style="margin:10px 0 6px 0; color:#2D7A5F;">${c.animalName || 'Unknown'} (${c.carProfileId})</h4>
-              <p style="margin:4px 0;"><strong>Type:</strong> ${c.animalType} | <strong>Sex:</strong> ${c.sex}</p>
-              <p style="margin:4px 0;"><strong>Locality:</strong> ${c.area}</p>
-              <p style="margin:4px 0;"><strong>Marks:</strong> ${c.identificationMarks || 'None'}</p>
-              ${directImgUrl ? `<img src="${directImgUrl}" class="media-thumb" style="margin-top:8px; width:100%; max-height:150px; object-fit:cover; border-radius:6px;" />` : ''}
-              
-              <div class="match-actions" style="margin-top:14px; display:flex; flex-direction:column; gap:8px;">
-                <button type="button" class="btn-primary" style="background:#137333; font-size:13px;" onclick="selectSameAnimal('${c.carProfileId}', '${c.animalName || 'Animal'}')">
-                  ✅ Same Animal (Add Event to History)
-                </button>
-                <button type="button" class="btn-secondary" style="background:#fef3c7; color:#92400e; border-color:#fde68a; font-size:13px;" onclick="selectNotSure('${c.carProfileId}', ${c.matchScore})">
-                  ❓ Not Sure (Hold for Admin Review)
-                </button>
-              </div>
-            </div>
-          `;
+      reader.onload = function(e) {
+        uploadedFiles.push({
+          filename: file.name,
+          mimeType: file.type,
+          base64Data: e.target.result
         });
 
-        html += `
-          </div>
-          <div style="margin-top:20px; text-align:center; padding:16px; background:#f9f9f9; border-radius:8px;">
-            <p style="margin-bottom:10px; font-weight:600; color:#374151;">None of these match your animal?</p>
-            <button type="button" class="btn-primary" onclick="handleDirectCreateFromSbc()">
-              🐾 Different Animal — Proceed & Create Profile
-            </button>
-          </div>
+        // Display file in list
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        fileItem.innerHTML = `
+          <span>${file.name}</span>
+          <button type="button" class="btn-remove" onclick="removeFile('${file.name}')">Remove</button>
         `;
-
-        resultsContainer.innerHTML = html;
-      })
-      .withFailureHandler((err) => {
-        resultsContainer.innerHTML = `<div class="form-message error">Search Error: ${err.message}</div>`;
-      })
-      .apiSearchBeforeCreate({ animalType, area, animalName, sex, breedType, identificationMarks: marks });
-  }
-
-  function autoFillProfileFormFromSbc() {
-    const setVal = (name, val) => {
-      if (!val) return;
-      const el = document.querySelector(`[name="${name}"]`);
-      if (el) el.value = val;
-    };
-
-    setVal('contributorName', document.getElementById('sbcContributorName')?.value);
-    setVal('contributorMobile', document.getElementById('sbcContributorMobile')?.value);
-    setVal('contributorEmail', document.getElementById('sbcContributorEmail')?.value);
-
-    setVal('animalType', document.getElementById('sbcAnimalType')?.value);
-    setVal('area', document.getElementById('sbcArea')?.value);
-    setVal('animalName', document.getElementById('sbcAnimalName')?.value);
-    setVal('sex', document.getElementById('sbcSex')?.value);
-    setVal('age', document.getElementById('sbcAge')?.value);
-    setVal('breedType', document.getElementById('sbcBreedType')?.value);
-    setVal('nativeDogType', document.getElementById('sbcNativeDogType')?.value);
-
-    const caregiverAnswer = document.getElementById('sbcCaregiverAnswer')?.value || 'Yes';
-    setVal('caregiverAnswer', caregiverAnswer);
-
-    const sbcCaregiverType = document.getElementById('sbcCaregiverType')?.value;
-    if (sbcCaregiverType) {
-      setVal('caregiverType', sbcCaregiverType);
-      const caregiverWhoEl = document.getElementById('fieldCaregiverWho');
-      if (caregiverWhoEl) caregiverWhoEl.style.display = '';
-    }
-
-    setVal('healthStatus', document.getElementById('sbcHealthStatus')?.value);
-    setVal('behavior', document.getElementById('sbcBehavior')?.value);
-    setVal('identificationMarks', document.getElementById('sbcIdentificationMarks')?.value);
-    setVal('seenRegularly', document.getElementById('sbcSeenRegularly')?.value);
-    setVal('landmark', document.getElementById('sbcLandmark')?.value);
-
-    const sbcGps = document.getElementById('sbcGpsCoordinates')?.value;
-    if (sbcGps) {
-      const gpsInput = document.getElementById('gpsCoordinates');
-      if (gpsInput) gpsInput.value = sbcGps;
-    }
-
-    if (sbcUploadedFiles && sbcUploadedFiles.length > 0) {
-      uploadedFiles = [...sbcUploadedFiles];
-    }
-  }
-
-  function selectSameAnimal(carProfileId, animalName) {
-    if (confirm(`Open Add Event form to append event history for ${animalName} (${carProfileId})?`)) {
-      showPage('event');
-      document.getElementById('eventCarProfileId').value = carProfileId;
-    }
-  }
-
-  function selectDifferentAnimal() {
-    autoFillProfileFormFromSbc();
-    const fullFormSection = document.getElementById('fullProfileFormSection');
-    if (fullFormSection) {
-      fullFormSection.style.display = 'block';
-      fullFormSection.scrollIntoView({ behavior: 'smooth' });
-    }
-    const resultsContainer = document.getElementById('searchBeforeCreateResults');
-    if (resultsContainer) resultsContainer.style.display = 'none';
-  }
-
-  function selectNotSure(matchedCarProfileId, matchScore) {
-    if (!confirm('Flag submission on HOLD for Admin side-by-side review?')) return;
-
-    autoFillProfileFormFromSbc();
-    const data = gatherProfileFormData();
-    if (sbcUploadedFiles.length > 0 && (!data.media || data.media.length === 0)) {
-      data.media = sbcUploadedFiles;
-    }
-
-    showLoading(true);
-    google.script.run
-      .withSuccessHandler((res) => {
-        showLoading(false);
-        if (res && res.success) {
-          const successContainer = document.getElementById('profileSuccessContainer');
-          if (successContainer) {
-            successContainer.innerHTML = `
-              <div class="success-banner-card info-theme">
-                <div class="success-header-row">
-                  <span class="success-icon-badge">📋</span>
-                  <h3 class="success-title">Submission Placed on Hold for Admin Review!</h3>
-                </div>
-                <p class="success-desc">
-                  Because potential candidate matches exist in your area, your animal record has been placed on <strong>Hold (ID: ${res.holdId})</strong> for side-by-side administrative review. No duplicates will be created.
-                </p>
-                <div class="car-id-box">
-                  <span>Hold Reference ID:</span>
-                  <strong>${res.holdId}</strong>
-                  <button type="button" class="btn-copy" onclick="copyToClipboard('${res.holdId}')">📋 Copy ID</button>
-                </div>
-                <div class="success-actions">
-                  <button type="button" class="btn-primary" onclick="showPage('search')">Return to Search</button>
-                  <button type="button" class="btn-secondary" onclick="resetCreateForm()">Create Another Record</button>
-                </div>
-              </div>
-            `;
-            successContainer.scrollIntoView({ behavior: 'smooth' });
-          }
-          const resultsContainer = document.getElementById('searchBeforeCreateResults');
-          if (resultsContainer) resultsContainer.style.display = 'none';
-        } else {
-          alert('Error: ' + ((res && res.error) || 'Failed to submit hold.'));
-        }
-      })
-      .withFailureHandler((err) => {
-        showLoading(false);
-        alert('Server Error: ' + err.message);
-      })
-      .apiSaveUncertainMatch({
-        matchedCarProfileId: matchedCarProfileId,
-        matchScore: matchScore,
-        submittedData: data
-      });
-  }
-
-  function handleDirectCreateFromSbc() {
-    autoFillProfileFormFromSbc();
-    const data = gatherProfileFormData();
-    if (sbcUploadedFiles.length > 0 && (!data.media || data.media.length === 0)) {
-      data.media = sbcUploadedFiles;
-    }
-
-    submitProfileData(data);
-  }
-
-  // --- 5. Conditional Field Handlers (Profile Form) ---------------------------
-  function handleAnimalTypeChange(val) {
-    const nativeField = document.getElementById('fieldNativeDogType');
-    if (nativeField) nativeField.style.display = (val === 'Dog') ? '' : 'none';
-  }
-
-  function handleNativeBreedChange(val) {
-    const otherField = document.getElementById('fieldBreedOther');
-    if (otherField) otherField.style.display = (val === 'Other') ? '' : 'none';
-  }
-
-  function handleBreedTypeChange(val) {
-    const otherField = document.getElementById('fieldBreedOther');
-    if (otherField) otherField.style.display = (val === 'Other') ? '' : 'none';
-  }
-
-  function handleCaregiverChange(val) {
-    const who = document.getElementById('fieldCaregiverWho');
-    const care = document.getElementById('fieldCareProvided');
-    if (who) who.style.display = (val === 'Yes') ? '' : 'none';
-    if (care) care.style.display = (val === 'Yes') ? '' : 'none';
-  }
-
-  function handleCaregiverTypeChange(val) {
-    const other = document.getElementById('fieldCaregiverOther');
-    if (other) other.style.display = (val === 'Other') ? '' : 'none';
-  }
-
-  function handleCareTypeChange(val) {
-    const other = document.getElementById('fieldCareOther');
-    if (other) other.style.display = (val === 'Other') ? '' : 'none';
-  }
-
-  function handleFileSelect(event) {
-    const files = Array.from(event.target.files);
-    uploadedFiles = [];
-    const fileListEl = document.getElementById('fileList');
-    if (fileListEl) fileListEl.innerHTML = '';
-
-    for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        uploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data: e.target.result, visibility: 'Restricted', source: 'Self-reported' });
-        if (fileListEl) fileListEl.innerHTML += `<div>Uploaded: ${file.name}</div>`;
+        fileListDiv.appendChild(fileItem);
       };
       reader.readAsDataURL(file);
     }
+
+    // Clear input
+    event.target.value = '';
   }
 
   function handleEventFileSelect(event) {
-    const files = Array.from(event.target.files);
-    eventUploadedFiles = [];
-    const listEl = document.getElementById('eventFileList');
-    if (listEl) listEl.innerHTML = '';
-
-    for (const file of files) {
+    const files = event.target.files;
+    if (eventUploadedFiles.length + files.length > 5) { alert('Upload up to 5 files.'); event.target.value = ''; return; }
+    Array.from(files).forEach(file => {
+      if (file.size > 10 * 1024 * 1024) { alert(file.name + ' exceeds the 10 MB limit.'); return; }
       const reader = new FileReader();
-      reader.onload = (e) => {
-        eventUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data: e.target.result, visibility: 'Restricted', source: 'Self-reported' });
-        if (listEl) listEl.innerHTML += `<div>Attached: ${file.name}</div>`;
+      reader.onload = function(e) {
+        eventUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data: e.target.result });
+        document.getElementById('eventFileList').insertAdjacentHTML('beforeend', '<div class="file-item"><span>' + file.name + '</span></div>');
       };
       reader.readAsDataURL(file);
-    }
+    });
+    event.target.value = '';
   }
 
-  function handleSterilizationFileSelect(event) {
-    const files = Array.from(event.target.files);
-    sterilizationUploadedFiles = [];
-    const listEl = document.getElementById('sterilizationFileList');
-    if (listEl) listEl.innerHTML = '';
+  function removeFile(filename) {
+    uploadedFiles = uploadedFiles.filter(f => f.filename !== filename);
 
-    for (const file of files) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        sterilizationUploadedFiles.push({ filename: file.name, mimeType: file.type, base64Data: e.target.result, visibility: 'Restricted', source: 'Self-reported' });
-        if (listEl) listEl.innerHTML += `<div>Attached: ${file.name}</div>`;
-      };
-      reader.readAsDataURL(file);
-    }
+    // Update display
+    const fileListDiv = document.getElementById('fileList');
+    const items = fileListDiv.querySelectorAll('.file-item');
+    items.forEach(item => {
+      if (item.textContent.includes(filename)) {
+        item.remove();
+      }
+    });
   }
 
-  // --- 6. Data Gathering & Profile Submission ----------------------------------
-  function gatherProfileFormData() {
-    const getVal = (selector, fallback = '') => {
-      const el = document.querySelector(selector);
-      return el ? el.value.trim() : fallback;
-    };
-    const getById = (id, fallback = '') => {
-      const el = document.getElementById(id);
-      return el ? el.value.trim() : fallback;
-    };
+  // Form submission
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('profileForm');
+    if (form) {
+      form.addEventListener('submit', handleFormSubmit);
+      const existingGuard = sessionStorage.getItem('carProfileCreatedSession');
+      if (existingGuard === 'true') {
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (submitButton) submitButton.disabled = true;
+        showPage('home');
+      }
+    }
+    const eventForm = document.getElementById('eventForm');
+    if (eventForm) {
+      eventForm.addEventListener('submit', handleEventSubmit);
+      const eventTypeInput = eventForm.querySelector('[name="eventType"]');
+      if (eventTypeInput && !eventTypeInput.value) eventTypeInput.value = 'Vaccination or Preventive Care';
+      handleEventTypeChange(eventTypeInput ? eventTypeInput.value : 'Vaccination or Preventive Care');
+      document.querySelectorAll('.event-kind-button').forEach(button => {
+        button.addEventListener('click', function() {
+          handleEventTypeChange(this.dataset.eventKind);
+        });
+      });
+    }
+  });
 
-    const contributorName = getVal('[name="contributorName"]') || getById('sbcContributorName', '');
-    const contributorMobile = getVal('[name="contributorMobile"]') || getById('sbcContributorMobile', '');
-    const contributorEmail = getVal('[name="contributorEmail"]') || getById('sbcContributorEmail', '');
+  function handleFormSubmit(event) {
+    event.preventDefault();
 
-    const animalType = getVal('[name="animalType"]') || getById('sbcAnimalType', 'Dog');
-    const animalName = getVal('[name="animalName"]') || getById('sbcAnimalName', 'Unknown');
-    const sex = getVal('[name="sex"]') || getById('sbcSex', 'Unknown');
-    const age = getVal('[name="age"]') || getById('sbcAge', 'Unknown');
-    const breedType = getVal('[name="breedType"]') || getById('sbcBreedType', 'Indie / Native');
-    const nativeDogType = getVal('[name="nativeDogType"]') || getById('sbcNativeDogType', '');
-    const caregiverAnswer = getVal('[name="caregiverAnswer"]') || getById('sbcCaregiverAnswer', 'Yes');
-    const caregiverType = getVal('[name="caregiverType"]') || getById('sbcCaregiverType', 'Individual');
+    if (sessionStorage.getItem('carProfileCreatedSession') === 'true') {
+      showPage('home');
+      return;
+    }
 
-    const area = getVal('[name="area"]') || getById('sbcArea', '');
-    const gpsCoordinates = getById('gpsCoordinates') || getById('sbcGpsCoordinates', '');
-    const seenRegularly = getVal('[name="seenRegularly"]') || getById('sbcSeenRegularly', 'Yes. Seen often');
-    const landmark = getVal('[name="landmark"]') || getById('sbcLandmark', '');
+    const form = event.target;
+    const formData = new FormData(form);
 
-    const healthStatus = getVal('[name="healthStatus"]') || getById('sbcHealthStatus', 'Healthy');
-    const behavior = getVal('[name="behavior"]') || getById('sbcBehavior', 'Friendly');
-    const identificationMarks = getVal('[name="identificationMarks"]') || getById('sbcIdentificationMarks', 'None visible');
-
-    return {
+    // Build profile data object
+    const profileData = {
       contributor: {
-        name: contributorName,
-        mobile: contributorMobile,
-        email: contributorEmail
+        name: formData.get('contributorName'),
+        mobile: formData.get('contributorMobile'),
+        email: formData.get('contributorEmail') || ''
       },
       animal: {
-        animalType: animalType,
-        animalName: animalName || 'Unknown',
-        sex: sex,
-        age: age,
-        breedType: breedType,
-        nativeDogType: nativeDogType,
-        breedOtherDetails: getVal('[name="breedOtherDetails"]'),
-        caregiverAnswer: caregiverAnswer,
-        caregiverType: caregiverType,
-        caregiverOtherDetails: getVal('[name="caregiverOtherDetails"]'),
-        careProvided: getVal('[name="careProvided"]', 'Food and water'),
-        careOtherDetails: getVal('[name="careOtherDetails"]')
+        animalType: formData.get('animalType'),
+        nativeDogType: formData.get('nativeDogType') || '',
+        breedType: formData.get('breedType') || '',
+        breedOtherDetails: formData.get('breedOtherDetails') || '',
+        animalName: formData.get('animalName') || '',
+        sex: formData.get('sex') || 'Unknown',
+        age: formData.get('age') || 'Unknown',
+        caregiverAnswer: formData.get('caregiverAnswer') || '',
+        caregiverType: formData.get('caregiverType') || '',
+        caregiverOtherDetails: formData.get('caregiverOtherDetails') || '',
+        careProvided: formData.get('careProvided') || '',
+        careOtherDetails: formData.get('careOtherDetails') || ''
       },
       location: {
-        area: area,
-        city: getVal('[name="city"]', 'Hyderabad'),
-        state: getVal('[name="state"]', 'Telangana'),
-        usualLocationType: getVal('[name="usualLocationType"]', 'Residential area'),
-        landmark: landmark,
-        gpsCoordinates: gpsCoordinates,
-        gpsLatitude: getById('gpsLatitude'),
-        gpsLongitude: getById('gpsLongitude'),
-        gpsCapturedMethod: getById('gpsCapturedMethod', 'Device GPS'),
-        seenRegularly: seenRegularly
+        area: formData.get('area'),
+        landmark: formData.get('landmark') || '',
+        usualLocationType: formData.get('usualLocationType') || '',
+        state: formData.get('state') || '',
+        city: formData.get('city') || '',
+        gpsLocation: formData.get('gpsLocation') || '',
+        seenRegularly: formData.get('seenRegularly') || ''
       },
       baselineStatus: {
-        healthStatus: healthStatus,
-        vaccinationStatus: getVal('[name="vaccinationStatus"]', 'Unknown'),
-        sterilisationStatus: getVal('[name="sterilisationStatus"]', 'Unknown'),
-        behavior: behavior,
-        abcStatus: getVal('[name="abcStatus"]', ''),
-        abcOutcome: getVal('[name="abcOutcome"]', ''),
-        identificationMarks: identificationMarks,
-        identificationOtherDetails: getVal('[name="identificationOtherDetails"]'),
-        additionalDetails: getVal('[name="additionalDetails"]')
+        healthStatus: formData.get('healthStatus') || 'Unknown',
+        vaccinationStatus: formData.get('vaccinationStatus') || 'Unknown',
+        sterilisationStatus: formData.get('sterilisationStatus') || 'Unknown',
+        behavior: formData.get('behavior') || '',
+        abcStatus: formData.get('abcStatus') || '',
+        abcOutcome: formData.get('abcOutcome') || '',
+        identificationMarks: formData.get('identificationMarks') || '',
+        identificationOtherDetails: formData.get('identificationOtherDetails') || '',
+        additionalDetails: formData.get('additionalDetails') || ''
       },
-      media: uploadedFiles.length > 0 ? uploadedFiles : sbcUploadedFiles
+      media: uploadedFiles
     };
-  }
 
-  function handleProfileSubmit(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (isSubmitting) return;
-
-    autoFillProfileFormFromSbc();
-    const data = gatherProfileFormData();
-    submitProfileData(data);
-  }
-
-  function submitProfileData(data) {
-    if (isSubmitting) return;
-    isSubmitting = true;
+    // Show loading
     showLoading(true);
 
-    const successContainer = document.getElementById('profileSuccessContainer');
-    const fullFormSection = document.getElementById('fullProfileFormSection');
-
+    // Call server-side API
     google.script.run
-      .withSuccessHandler((response) => {
-        showLoading(false);
-        isSubmitting = false;
-
-        if (response && response.success) {
-          const carId = response.carProfileId;
-          const aName = data.animal?.animalName || 'Animal';
-
-          if (successContainer) {
-            successContainer.innerHTML = `
-              <div class="success-banner-card">
-                <div class="success-header-row">
-                  <span class="success-icon-badge">🎉</span>
-                  <h3 class="success-title">Profile Created Successfully!</h3>
-                </div>
-                <p class="success-desc">
-                  A persistent CAR profile for <strong>${aName}</strong> has been registered in the Community Animal Records database.
-                </p>
-                <div class="car-id-box">
-                  <span>CAR Profile ID:</span>
-                  <strong>${carId}</strong>
-                  <button type="button" class="btn-copy" onclick="copyToClipboard('${carId}')">📋 Copy ID</button>
-                </div>
-                <div class="success-actions">
-                  <button type="button" class="btn-primary" onclick="handleSearchById('${carId}', 'New Profile Created Successfully!')">
-                    👁️ View Full Profile
-                  </button>
-                  <button type="button" class="btn-secondary" onclick="showPage('event'); document.getElementById('eventCarProfileId').value='${carId}';">
-                    ➕ Add Event for this Animal
-                  </button>
-                  <button type="button" class="btn-secondary" onclick="resetCreateForm()">
-                    🐾 Register Another Animal
-                  </button>
-                </div>
-              </div>
-            `;
-            successContainer.scrollIntoView({ behavior: 'smooth' });
-          }
-
-          if (fullFormSection) fullFormSection.style.display = 'none';
-          const resultsContainer = document.getElementById('searchBeforeCreateResults');
-          if (resultsContainer) resultsContainer.style.display = 'none';
-
-          uploadedFiles = [];
-          sbcUploadedFiles = [];
-        } else {
-          alert('Error creating profile: ' + ((response && response.error) || 'Unknown error'));
-        }
-      })
-      .withFailureHandler((err) => {
-        showLoading(false);
-        isSubmitting = false;
-        alert('Server Error: ' + err.message);
-      })
-      .apiSaveProfile(data);
+      .withSuccessHandler(handleSaveSuccess)
+      .withFailureHandler(handleSaveError)
+      .apiSaveProfile(profileData);
   }
 
-  // --- 7. Event Tab Switching & Event Submission --------------------------------
-  function switchEventTab(kind) {
-    const typeInput = document.getElementById('eventType');
-    if (typeInput) typeInput.value = kind;
+  function handleSaveSuccess(result) {
+    showLoading(false);
 
-    // Update button active styling
-    const buttons = document.querySelectorAll('.event-kind-button');
-    buttons.forEach(btn => {
-      const isMatch = (btn.dataset.eventKind === kind) || (btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(kind));
-      if (isMatch) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
-      }
-    });
+    if (result.success) {
+      sessionStorage.setItem('carProfileCreatedSession', 'true');
+      const form = document.getElementById('profileForm');
+      const submitButton = form ? form.querySelector('button[type="submit"]') : null;
+      if (submitButton) submitButton.disabled = true;
 
-    // Toggle panel visibility and dynamically enable/disable inputs
-    // (Disabled inputs are excluded from HTML5 browser validation, preventing "element not focusable" errors)
-    document.querySelectorAll('.event-detail-panel').forEach(panel => {
-      const isActive = panel.dataset.eventPanel === kind;
-      panel.style.display = isActive ? 'block' : 'none';
-      panel.querySelectorAll('input, select, textarea').forEach(input => {
-        input.disabled = !isActive;
-      });
-    });
-  }
-
-  function handleEventSubmit(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (isSubmitting) return;
-
-    const form = document.getElementById('eventForm');
-    const carProfileId = document.getElementById('eventCarProfileId')?.value?.trim();
-
-    if (!carProfileId) {
-      alert('Please select or search for an existing animal CAR Profile ID first.');
-      showPage('search');
-      return;
-    }
-
-    const gpsCoordinates = document.getElementById('eventGpsCoordinates')?.value?.trim();
-    if (!gpsCoordinates) {
-      alert('GPS Location is mandatory. Please click "📍 Capture Location" or enter coordinates.');
-      document.getElementById('eventGpsCoordinates')?.focus();
-      return;
-    }
-
-    const activePanel = document.querySelector('.event-kind-button.active')?.dataset?.eventKind || document.getElementById('eventType')?.value || 'Vaccination or Preventive Care';
-    const mediaFiles = activePanel === 'Sterilization' ? sterilizationUploadedFiles : eventUploadedFiles;
-
-    const getVal = (selector, fallback = '') => {
-      const el = form ? form.querySelector(selector) : null;
-      return el ? el.value.trim() : fallback;
-    };
-    const getChecked = (name) => {
-      if (!form) return '';
-      return Array.from(form.querySelectorAll(`[name="${name}"]:checked`)).map(cb => cb.value).join(', ');
-    };
-
-    let eventPayload = {
-      eventType: activePanel,
-      googleLocationPin: gpsCoordinates,
-      datePrecision: getVal('#eventDatePrecision', 'Exact'),
-      source: getVal('#eventSource', 'Self-reported'),
-      verificationStatus: getVal('#eventVerificationStatus', 'Unverified')
-    };
-
-    if (activePanel === 'Vaccination or Preventive Care') {
-      const pType = getVal('[name="preventiveCareType"]');
-      const givenBy = getVal('[name="preventiveCareGivenBy"]');
-      if (!pType) {
-        alert('Please select the Type of Preventive Care.');
-        form.querySelector('[name="preventiveCareType"]')?.focus();
-        return;
-      }
-      if (!givenBy) {
-        alert('Please enter who provided or administered the care.');
-        form.querySelector('[name="preventiveCareGivenBy"]')?.focus();
-        return;
-      }
-
-      eventPayload = {
-        ...eventPayload,
-        eventCategory: pType,
-        eventOtherDetails: getVal('[name="preventiveCareOtherDetails"]'),
-        dateOfEvent: getVal('[name="preventiveCareDate"]', new Date().toISOString().split('T')[0]),
-        organisationOrPerson: givenBy,
-        additionalDetails: getVal('[name="vaccineProductName"]'),
-        eventDescription: `Preventive care (${pType}) administered by ${givenBy}`
-      };
-    } else if (activePanel === 'Medical Treatment') {
-      const tDate = getVal('[name="medicalTreatmentDate"]');
-      if (!tDate) {
-        alert('Please enter the Date of treatment.');
-        form.querySelector('[name="medicalTreatmentDate"]')?.focus();
-        return;
-      }
-
-      eventPayload = {
-        ...eventPayload,
-        dateOfEvent: tDate,
-        healthCondition: getChecked('medicalTreatmentHealthCondition') || 'Under Treatment',
-        behaviour: getChecked('medicalTreatmentBehaviour'),
-        eventCategory: getChecked('medicalTreatmentReason') || 'Medical Treatment',
-        eventDescription: getVal('[name="medicalTreatmentGiven"]') || 'Medical treatment administered',
-        organisationOrPerson: getVal('[name="medicalTreatmentProvidedBy"]'),
-        additionalDetails: getVal('[name="medicalTreatmentAdditionalDetails"]')
-      };
-    } else if (activePanel === 'Sterilization') {
-      eventPayload = {
-        ...eventPayload,
-        dateReported: getVal('[name="sterilizationDateReported"]', new Date().toISOString().split('T')[0]),
-        healthCondition: getChecked('sterilizationHealthCondition'),
-        behaviour: getChecked('sterilizationBehaviour'),
-        vaccinated: getVal('[name="sterilizationVaccinated"]', 'Unknown'),
-        sterilised: getVal('[name="sterilizationStatus"]', 'Yes'),
-        identificationMarks: getChecked('sterilizationIdentificationMarks'),
-        eventCategory: getChecked('sterilizationProcedureActions') || 'Sterilization Surgery',
-        dateOfEvent: getVal('[name="sterilizationProcedureDate"]', getVal('[name="sterilizationDateReported"]')),
-        organisationOrPerson: getVal('[name="sterilizationPerformedBy"]'),
-        outcomeCurrentStatus: getVal('[name="sterilizationRecoveryStatus"]', 'Recovering Well'),
-        additionalDetails: getVal('[name="sterilizationAdditionalDetails"]'),
-        eventDescription: 'Sterilization / ABC procedure'
-      };
-    }
-
-    const submitBtn = form ? form.querySelector('button[type="submit"]') : null;
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.innerText = 'Saving Event...'; }
-    isSubmitting = true;
-    showLoading(true);
-
-    const successContainer = document.getElementById('eventSuccessContainer');
-
-    google.script.run
-      .withSuccessHandler((res) => {
-        showLoading(false);
-        isSubmitting = false;
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Event'; }
-
-        if (res && res.success) {
-          eventUploadedFiles = [];
-          sterilizationUploadedFiles = [];
-          if (form) form.reset();
-
-          if (successContainer) {
-            successContainer.innerHTML = `
-              <div class="success-banner-card">
-                <div class="success-header-row">
-                  <span class="success-icon-badge">✅</span>
-                  <h3 class="success-title">Event Recorded Successfully!</h3>
-                </div>
-                <p class="success-desc">
-                  <strong>${activePanel}</strong> has been appended to continuing history for <strong>${carProfileId}</strong>.
-                </p>
-                <div class="car-id-box">
-                  <span>Event Reference ID:</span>
-                  <strong>${res.eventId}</strong>
-                  <button type="button" class="btn-copy" onclick="copyToClipboard('${res.eventId}')">📋 Copy ID</button>
-                </div>
-                <div class="success-actions">
-                  <button type="button" class="btn-primary" onclick="handleSearchById('${carProfileId}', 'New Event Recorded Successfully!')">
-                    👁️ View Updated Timeline
-                  </button>
-                  <button type="button" class="btn-secondary" onclick="resetEventForm('${carProfileId}')">
-                    ➕ Add Another Event
-                  </button>
-                </div>
-              </div>
-            `;
-            successContainer.scrollIntoView({ behavior: 'smooth' });
-          }
-        } else {
-          alert('Error saving event: ' + ((res && res.error) || 'Unknown error'));
-        }
-      })
-      .withFailureHandler((err) => {
-        showLoading(false);
-        isSubmitting = false;
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.innerText = 'Save Event'; }
-        alert('Server Error: ' + err.message);
-      })
-      .apiSaveEvent({ carProfileId, event: eventPayload, media: mediaFiles });
-  }
-
-  // --- 8. Search & Profile Display (with Event Media Linkage W2.3) -------------
-  function handleSearch() {
-    const query = document.getElementById('searchInput')?.value?.trim();
-    if (!query) return;
-    handleSearchById(query);
-  }
-
-  function handleSearchById(carProfileId, bannerMessage = '') {
-    showLoading(true);
-    google.script.run
-      .withSuccessHandler((response) => {
-        showLoading(false);
-        if (response && response.success && response.found) {
-          renderProfileDisplay(response.profile, bannerMessage);
-          showPage('profile');
-        } else {
-          google.script.run
-            .withSuccessHandler((searchRes) => {
-              if (searchRes && searchRes.success && searchRes.found && searchRes.profiles.length > 0) {
-                if (searchRes.profiles.length === 1) {
-                  handleSearchById(searchRes.profiles[0].carProfileId);
-                } else {
-                  const container = document.getElementById('searchResults');
-                  if (container) {
-                    let html = `<h3>Search Results for "${carProfileId}"</h3><div class="match-card-grid">`;
-                    searchRes.profiles.forEach(p => {
-                      html += `
-                        <div class="match-card" style="cursor:pointer;" onclick="handleSearchById('${p.carProfileId}')">
-                          <span class="profile-car-id">${p.carProfileId}</span>
-                          <h4>${p.animalName} (${p.animalType})</h4>
-                          <p><strong>Area:</strong> ${p.area || 'Unknown'}</p>
-                          <button class="btn-primary" style="margin-top:8px; width:100%;">View Full Profile</button>
-                        </div>
-                      `;
-                    });
-                    html += `</div>`;
-                    container.innerHTML = html;
-                    showPage('search');
-                  }
-                }
-              } else {
-                alert('No animal profile found matching: ' + carProfileId);
-              }
-            })
-            .apiSearchRecords(carProfileId);
-        }
-      })
-      .withFailureHandler((err) => {
-        showLoading(false);
-        alert('Search Error: ' + err.message);
-      })
-      .apiSearchProfile(carProfileId);
-  }
-
-  function renderProfileDisplay(profile, bannerMessage = '') {
-    const display = document.getElementById('profileDisplay');
-    if (!display || !profile) return;
-
-    const a = profile.animal || {};
-    const l = profile.location || {};
-    const b = profile.baselineStatus || {};
-    const events = profile.events || [];
-    const media = profile.media || [];
-
-    let bannerHtml = '';
-    if (bannerMessage) {
-      bannerHtml = `
-        <div style="background-color:#e6f4ea; border:1px solid #c2e7cd; color:#137333; padding:16px; border-radius:8px; margin-bottom:20px; font-weight:600;">
-          ✅ ${bannerMessage} (CAR ID: ${a.carProfileId})
-        </div>
+      // Show success message
+      const messageDiv = document.getElementById('formMessage');
+      messageDiv.className = 'form-message success';
+      messageDiv.innerHTML = `
+        <h3>Profile Created Successfully!</h3>
+        <p style="margin-top: 8px;">Animal Name: <strong>${document.querySelector('[name="animalName"]').value || 'Unknown'}</strong></p>
+        <p style="margin-top: 4px;">CAR Profile ID: <strong style="color: var(--accent-red); font-family: monospace;">${result.carProfileId}</strong></p>
+        <p style="margin-top: 12px; font-size: 14px;">A confirmation email has been sent if you provided an email address.</p>
       `;
+
+      // Reset form
+      form.reset();
+      uploadedFiles = [];
+      document.getElementById('fileList').innerHTML = '';
+      showPage('home');
+      messageDiv.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      handleSaveError(result.error);
     }
+  }
 
-    let mediaHtml = '';
-    media.forEach(m => {
-      if (m.driveFileURL) {
-        const directUrl = getDirectDriveImageUrl(m.driveFileURL);
-        mediaHtml += `<a href="${m.driveFileURL}" target="_blank"><img src="${directUrl}" class="media-thumb" title="${m.fileName || 'Media'}" /></a>`;
-      }
-    });
+  function handleSaveError(error) {
+    showLoading(false);
 
-    let eventsHtml = '';
-    events.forEach(e => {
-      // Find media specifically linked to this event (W2.3 Evidence Linkage)
-      const eventMedia = media.filter(m => m.eventId && String(m.eventId).replace(/^'/, '') === String(e.eventId).replace(/^'/, ''));
-      let eventMediaHtml = '';
-      if (eventMedia.length > 0) {
-        eventMediaHtml = '<div class="timeline-event-media">';
-        eventMedia.forEach(em => {
-          const directUrl = getDirectDriveImageUrl(em.driveFileURL);
-          eventMediaHtml += `<a href="${em.driveFileURL}" target="_blank"><img src="${directUrl}" title="Event Evidence: ${em.fileName}" /></a>`;
-        });
-        eventMediaHtml += '</div>';
-      }
-
-      eventsHtml += `
-        <div class="timeline-item" style="border-left:3px solid #2D7A5F; padding-left:16px; margin-bottom:20px;">
-          <div class="timeline-date" style="font-weight:700; color:#2D7A5F;">${e.dateOfEvent || e.timestamp} | ${e.eventType}</div>
-          <div class="timeline-content" style="margin-top:6px;">
-            <p><strong>Description:</strong> ${e.eventDescription || e.eventCategory || 'No description'}</p>
-            ${e.googleLocationPin ? `<p><small style="color:#555;">📍 Event Location: ${e.googleLocationPin}</small></p>` : ''}
-            <p><span class="info-text">Source: ${e.source || 'Self-reported'} | Verification: ${e.verificationStatus || 'Unverified'}</span></p>
-            ${eventMediaHtml}
-          </div>
-        </div>
-      `;
-    });
-
-    display.innerHTML = `
-      ${bannerHtml}
-      <div class="profile-header">
-        <span class="profile-car-id">${a.carProfileId}</span>
-        <h1 class="profile-title">${a.animalName}</h1>
-        <div class="profile-meta">
-          ${a.animalType} &bull; ${a.sex} &bull; ${a.age} &bull; Locality: ${l.area || 'Unknown'} ${l.landmark ? `(Near ${l.landmark})` : ''}
-          ${l.gpsCoordinates ? `<br><small style="color:#2D7A5F;">📍 GPS: ${l.gpsCoordinates} (${l.gpsCapturedMethod || 'Captured'})</small>` : ''}
-        </div>
-      </div>
-      <div class="detail-grid">
-        <div class="detail-card"><div class="detail-card-title">Health Condition</div><div class="detail-card-value">${b.healthStatus || 'Unknown'}</div></div>
-        <div class="detail-card"><div class="detail-card-title">Vaccination</div><div class="detail-card-value">${b.vaccinationStatus || 'Unknown'}</div></div>
-        <div class="detail-card"><div class="detail-card-title">Sterilisation</div><div class="detail-card-value">${b.sterilisationStatus || 'Unknown'}</div></div>
-        <div class="detail-card"><div class="detail-card-title">Identification Marks</div><div class="detail-card-value">${b.identificationMarks || 'None'}</div></div>
-      </div>
-      ${mediaHtml ? `<h3 style="margin-top:24px;">Media Evidence</h3><div class="media-gallery">${mediaHtml}</div>` : ''}
-      <div class="timeline" style="margin-top:28px;">
-        <h3 class="timeline-title">Event & Care History (Immutable Continuing Record)</h3>
-        ${eventsHtml || '<p class="info-text">No recorded events yet.</p>'}
-      </div>
-      <div style="margin-top:24px;">
-        <button class="btn-primary" onclick="showPage('event'); document.getElementById('eventCarProfileId').value='${a.carProfileId}';">+ Add Event / Medical Update</button>
-      </div>
+    const messageDiv = document.getElementById('formMessage');
+    messageDiv.className = 'form-message error';
+    messageDiv.innerHTML = `
+      <h3>Error Creating Profile</h3>
+      <p style="margin-top: 8px;">${error || 'An unexpected error occurred. Please try again.'}</p>
     `;
+
+    messageDiv.scrollIntoView({ behavior: 'smooth' });
   }
 
-  function showLoading(active) {
-    const el = document.getElementById('loadingOverlay');
-    if (el) el.className = active ? 'loading-overlay active' : 'loading-overlay';
+  // Search functionality
+  function handleSearch() {
+    const searchInput = document.getElementById('searchInput');
+    const query = searchInput.value.trim();
+
+    if (!query) {
+      alert('Please enter a CAR Profile ID to search');
+      return;
+    }
+
+    showLoading(true);
+
+    google.script.run
+      .withSuccessHandler(handleRecordSearchSuccess)
+      .withFailureHandler(handleSearchError)
+      .apiSearchRecords(query);
   }
 
+  function handleRecordSearchSuccess(result) {
+    showLoading(false);
+    if (!result.success) {
+      handleSearchError(result.error);
+      return;
+    }
+    if (result.found && result.profiles.length === 1) {
+      openProfile(result.profiles[0].carProfileId);
+      return;
+    }
+    const resultsDiv = document.getElementById('searchResults');
+    result.profiles.forEach(profile => { profileRecords[profile.carProfileId] = profile.record; });
+    resultsDiv.innerHTML = result.found ? result.profiles.map(profile => `
+      <div class="search-result-card"><div><strong>${profile.animalName || 'Unknown'}</strong><div>${profile.animalType}</div><small>${profile.carProfileId}</small></div><button type="button" class="btn-secondary" data-profile-id="${profile.carProfileId}" onclick="goToRecords('${profile.carProfileId}')">Go to records</button></div>
+    `).join('') : '<div class="form-message error"><h3>No matching records</h3><p>Try the exact CAR Profile ID, animal name, or area.</p></div>';
+  }
+
+  function displayRecordFromSearch(record) {
+    try {
+      displayProfile(record);
+      showPage('profile');
+    } catch (error) {
+      handleSearchError('The record was found, but could not be displayed: ' + error.message);
+    }
+  }
+
+  function handleSearchSuccess(result) {
+    showLoading(false);
+
+    if (result.success && result.found) {
+      try {
+        openDedicatedRecord(result.profile);
+      } catch (error) {
+        handleSearchError('The record was found, but could not be displayed: ' + error.message);
+      }
+    } else {
+      const resultsDiv = document.getElementById('searchResults');
+      resultsDiv.innerHTML = `
+        <div class="form-message error">
+          <h3>Profile Not Found</h3>
+          <p style="margin-top: 8px;">No profile found with ID: <strong>${document.getElementById('searchInput').value}</strong></p>
+          <p style="margin-top: 12px;">Please check the ID and try again, or create a new profile if this animal doesn't have one yet.</p>
+        </div>
+      `;
+    }
+  }
+
+  function handleSearchError(error) {
+    showLoading(false);
+    const message = document.getElementById('searchResults');
+    if (message) {
+      message.innerHTML = '<div class="form-message error"><h3>Could not open this record</h3><p>' + escapeHtml(String(error)) + '</p></div>';
+      message.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      alert('Search error: ' + error);
+    }
+  }
+
+  function escapeHtml(value) {
+    const element = document.createElement('div');
+    element.textContent = value;
+    return element.innerHTML;
+  }
+
+  function loadProfiles() {
+    google.script.run.withSuccessHandler(function(result) {
+      const browseProfiles = document.getElementById('browseProfiles');
+      if (!result.success) {
+        browseProfiles.innerHTML = '<p class="form-message error">Unable to load profiles: ' + result.error + '</p>';
+        return;
+      }
+      profileRecords = {};
+      browseProfiles.innerHTML = result.profiles.map(profile => `
+        <div class="search-result-card" data-profile-id="${profile.carProfileId}" role="button" tabindex="0"><div><strong>${escapeHtml(profile.animalName || 'Unknown')}</strong><div>${escapeHtml(profile.animalType || 'Animal type unknown')} · ${escapeHtml(profile.area || 'Area unknown')}</div><small>${escapeHtml(profile.carProfileId)}</small></div><span class="btn-secondary">Go to records</span></div>
+      `).join('') || '<p class="info-text">No profiles registered yet.</p>';
+      browseProfiles.querySelectorAll('[data-profile-id]').forEach(element => {
+        element.addEventListener('click', function(event) {
+          event.preventDefault();
+          event.stopPropagation();
+          const profileId = this.getAttribute('data-profile-id');
+          if (profileId) goToRecords(profileId);
+        });
+        element.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            goToRecords(this.getAttribute('data-profile-id'));
+          }
+        });
+      });
+    }).withFailureHandler(function(error) {
+      document.getElementById('browseProfiles').innerHTML = '<p class="form-message error">Unable to load profiles: ' + error + '</p>';
+    }).apiListProfiles();
+  }
+
+  function openProfile(carProfileId) {
+    const cleanId = String(carProfileId || '').trim();
+    if (!cleanId) return;
+    document.getElementById('searchInput').value = cleanId;
+    showLoading(true);
+    document.getElementById('searchResults').innerHTML = '<p class="info-text">Opening record ' + escapeHtml(cleanId) + '...</p>';
+    google.script.run
+      .withSuccessHandler(handleSearchSuccess)
+      .withFailureHandler(handleSearchError)
+      .apiSearchProfile(cleanId);
+  }
+
+  function goToRecords(carProfileId) {
+    const cleanId = String(carProfileId || '').trim();
+    openProfile(cleanId);
+  }
+
+  function openDedicatedRecord(record) {
+    const loading = document.getElementById('recordLoading');
+    const display = document.getElementById('recordDisplay');
+    loading.style.display = 'block';
+    display.innerHTML = '';
+    showPage('record');
+    try {
+      displayProfile(record, display);
+      loading.style.display = 'none';
+    } catch (error) {
+      loading.className = 'form-message error';
+      loading.textContent = 'Could not load this record: ' + error.message;
+    }
+  }
+
+  function openEventForm(carProfileId) {
+    document.getElementById('eventCarProfileId').value = carProfileId;
+    const eventForm = document.getElementById('eventForm');
+    if (eventForm) {
+      eventForm.reset();
+      handleEventTypeChange('');
+      google.script.run.withSuccessHandler(function(result) {
+        if (result && result.success && result.profile) {
+          const baseline = result.profile.baselineStatus || {};
+          const healthConditionEl = eventForm.querySelector('[name="healthCondition"]');
+          if (healthConditionEl) {
+            healthConditionEl.value = '';
+          }
+          if (baseline && baseline.healthStatus && baseline.healthStatus !== 'Unknown') {
+            const statusNote = eventForm.querySelector('[name="outcomeCurrentStatus"]');
+            if (statusNote && !statusNote.value) {
+              statusNote.value = 'Previous baseline health: ' + baseline.healthStatus;
+            }
+          }
+        }
+      }).apiSearchProfile(carProfileId);
+    }
+    showPage('event');
+  }
+
+  function getSelectedCheckboxValues(formData, key) {
+    const selected = [];
+    formData.forEach((value, formKey) => {
+      if (formKey === key && value) {
+        selected.push(String(value).trim());
+      }
+    });
+    return selected.filter(Boolean).join(', ');
+  }
+
+  function handleEventSubmit(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const eventData = {};
+
+    formData.forEach((value, key) => {
+      const allValues = formData.getAll(key);
+      const selectedValues = allValues.filter(item => item && String(item).trim());
+      if (key === 'carProfileId' || key === 'eventType') {
+        eventData[key] = value;
+        return;
+      }
+      if (selectedValues.length > 1) {
+        eventData[key] = selectedValues.join(', ');
+      } else if (!Object.prototype.hasOwnProperty.call(eventData, key)) {
+        eventData[key] = value;
+      }
+    });
+
+    const eventSpecificNarrative = Object.entries(eventData)
+      .filter(([key, value]) => typeof value === 'string' && (key.includes('AdditionalDetails') || key.includes('OtherDetails') || key.includes('EventDescription') || key.includes('OutcomeCurrentStatus') || key.includes('Narrative')))
+      .map(([, value]) => String(value).trim())
+      .filter(Boolean)
+      .join(' | ');
+
+    if (eventSpecificNarrative) {
+      eventData.eventOtherDetails = [eventData.eventOtherDetails, eventSpecificNarrative].filter(Boolean).join(' | ');
+    }
+
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(result) {
+      showLoading(false);
+      const message = document.getElementById('eventMessage');
+      message.className = 'form-message ' + (result.success ? 'success' : 'error');
+      message.innerHTML = result.success ? '<h3>Event saved</h3><p>Event ID: <strong>' + result.eventId + '</strong></p>' : '<h3>Event not saved</h3><p>' + result.error + '</p>';
+      if (result.success) {
+        event.target.reset();
+        eventUploadedFiles = [];
+        document.getElementById('eventFileList').innerHTML = '';
+        document.getElementById('sterilizationFileList')?.replaceChildren();
+        handleEventTypeChange('Vaccination or Preventive Care');
+      }
+      message.scrollIntoView({ behavior: 'smooth' });
+    }).withFailureHandler(function(error) { showLoading(false); alert('Event save error: ' + error); }).apiSaveEvent({
+      carProfileId: eventData.carProfileId,
+      event: eventData,
+      media: eventUploadedFiles
+    });
+  }
+
+  // Load search statistics
   function loadSearchStats() {
     google.script.run
-      .withSuccessHandler((res) => {
-        if (!res || !res.success) return;
-        const row = document.getElementById('statsDisplay');
-        if (row) {
-          row.innerHTML = `
-            <div class="stat-card"><div class="stat-number">${res.animalsCount}</div><div class="stat-label">Animals Profiled</div></div>
-            <div class="stat-card"><div class="stat-number">${res.eventsCount}</div><div class="stat-label">Events Logged</div></div>
-            <div class="stat-card"><div class="stat-number">${res.areasCount}</div><div class="stat-label">Areas Covered</div></div>
-            <div class="stat-card"><div class="stat-number">${res.percentLinked}%</div><div class="stat-label">With Photo Evidence</div></div>
-          `;
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          document.getElementById('statAnimals').textContent = result.animalsCount;
+          document.getElementById('statEvents').textContent = result.eventsCount;
+          document.getElementById('statAreas').textContent = result.areasCount;
+          document.getElementById('statLinked').textContent = result.percentLinked + '%';
         }
+      })
+      .withFailureHandler(function(error) {
+        console.error('Failed to load stats:', error);
       })
       .apiGetSearchStats();
   }
 
-  function loadProfiles() {
-    google.script.run
-      .withSuccessHandler((res) => {
-        if (!res || !res.success) return;
-        const container = document.getElementById('browseProfiles');
-        if (!container) return;
-        let html = '';
-        res.profiles.forEach(p => {
-          html += `
-            <div class="detail-card" style="cursor:pointer;" onclick="document.getElementById('searchInput').value='${p.carProfileId}'; handleSearch();">
-              <span class="profile-car-id">${p.carProfileId}</span>
-              <h4>${p.animalName} (${p.animalType})</h4>
-              <p class="info-text">Locality: ${p.area || 'Unknown'}</p>
-            </div>
-          `;
-        });
-        container.innerHTML = html;
-      })
-      .apiListProfiles();
-  }
+  // Display profile in detail view
+  function displayProfile(profile, targetElement) {
+    const animal = profile.animal;
+    const contributor = profile.contributor;
+    const location = profile.location;
+    const baseline = profile.baselineStatus;
+    const media = profile.media;
+    const events = profile.events || [];
 
-  // --- 9. Admin Hold Queue & Side-by-Side Review --------------------------------
-  function loadAdminHolds() {
-    const container = document.getElementById('adminHoldList');
-    if (!container) return;
-    container.innerHTML = '<p style="color:#2D7A5F; font-weight:600;">Loading pending verification holds...</p>';
+    // Generate avatar initials
+    const name = animal.animalName || 'Unknown';
+    const initials = name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
 
-    google.script.run
-      .withSuccessHandler((res) => {
-        if (!res || !res.success) {
-          container.innerHTML = '<p class="form-message error">Failed to load holds: ' + ((res && res.error) || 'Unknown error') + '</p>';
-          return;
-        }
-        if (!res.holds || res.holds.length === 0) {
-          container.innerHTML = '<p style="color:#137333; padding:18px; background:#e6f4ea; border-radius:8px; font-weight:600;">✅ No pending holds. All submissions have been reviewed.</p>';
-          cachedPendingHolds = [];
-          return;
-        }
+    // Format timestamp
+    const dateStr = new Date(animal.timestamp).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
 
-        cachedPendingHolds = res.holds;
-        let html = '';
-
-        res.holds.forEach(h => {
-          const submitted = h.submittedData || {};
-          const animal = submitted.animal || {};
-          const location = submitted.location || {};
-          const matched = h.matchedProfile || {};
-          const matchedAnimal = matched.animal || {};
-
-          const submittedDogName = animal.animalName || 'Unnamed Submitted Animal';
-          const matchedDogName = matchedAnimal.animalName || 'Existing Record';
-
-          html += `
-            <div class="admin-hold-card">
-              <div class="admin-hold-header">
-                <div>
-                  <span class="profile-car-id" style="margin-right:8px;">${h.holdId}</span>
-                  <span class="match-score-badge" style="background:#f59e0b; color:#fff; padding:3px 8px; border-radius:4px; font-weight:700; font-size:12px;">${h.matchScore}% Match Score</span>
-                </div>
-                <div>
-                  <button type="button" class="btn-eye" onclick="viewHoldComparison('${h.holdId}')">
-                    👁️ View Side-by-Side Comparison
-                  </button>
-                </div>
-              </div>
-
-              <div class="dual-dog-names" style="margin-bottom:12px;">
-                <span class="dog-tag-submitted">🐾 Submitted: ${submittedDogName}</span>
-                <span class="vs-badge">VS</span>
-                <span class="dog-tag-matched">🐾 Matched: ${matchedDogName} (${h.matchedCarProfileId})</span>
-              </div>
-
-              <div style="font-size:14px; color:#555; margin-bottom:16px;">
-                <strong>Area:</strong> ${location.area || 'Unknown'} &bull;
-                <strong>Type:</strong> ${animal.animalType || 'Dog'} &bull;
-                <strong>Submitted:</strong> ${h.createdAt || 'Recent'}
-              </div>
-
-              <div style="display:flex; gap:10px; flex-wrap:wrap; padding-top:10px; border-top:1px solid #f1f5f9;">
-                <button type="button" class="btn-primary" style="background:#137333;" onclick="resolveHold('${h.holdId}', 'APPROVE')">
-                  ✅ Approve (Create New Profile)
-                </button>
-                <button type="button" class="btn-secondary" style="background:#e8f0fe; color:#1a73e8; border-color:#dadce0;" onclick="resolveHold('${h.holdId}', 'CONFIRM_SAME')">
-                  🔗 Confirm Same (Merge)
-                </button>
-                <button type="button" class="btn-secondary" style="background:#fce8e6; color:#c5221f; border-color:#fad2cf;" onclick="resolveHold('${h.holdId}', 'REJECT')">
-                  ❌ Reject (Duplicate)
-                </button>
-              </div>
-            </div>
-          `;
-        });
-
-        container.innerHTML = html;
-      })
-      .withFailureHandler((err) => {
-        container.innerHTML = '<p class="form-message error">Error loading holds: ' + err.message + '</p>';
-      })
-      .apiGetPendingHolds();
-  }
-
-  function viewHoldComparison(holdId) {
-    const hold = cachedPendingHolds.find(h => String(h.holdId) === String(holdId));
-    if (!hold) {
-      alert('Hold details not found for ID: ' + holdId);
-      return;
+    // Build media grid HTML
+    let mediaHTML = '';
+    if (media && media.length > 0) {
+      mediaHTML = '<div class="media-grid">';
+      media.forEach(m => {
+        mediaHTML += `
+          <a href="${m.driveFileURL}" target="_blank" class="media-card">
+            <div class="media-preview-box">📄</div>
+            <div class="media-preview-name">${m.fileName}</div>
+          </a>
+        `;
+      });
+      mediaHTML += '</div>';
+    } else {
+      mediaHTML = '<p class="info-text">No photos uploaded</p>';
     }
 
-    const submitted = hold.submittedData || {};
-    const subAnimal = submitted.animal || {};
-    const subLoc = submitted.location || {};
-    const subBase = submitted.baselineStatus || {};
-    const subContrib = submitted.contributor || {};
-    const subMedia = submitted.media || [];
-    const subPhotoUrl = subMedia.length > 0 && subMedia[0].base64Data ? subMedia[0].base64Data : '';
-
-    const matched = hold.matchedProfile || {};
-    const mAnimal = matched.animal || {};
-    const mLoc = matched.location || {};
-    const mBase = matched.baselineStatus || {};
-    const mMedia = matched.media || [];
-    const mPhotoUrl = mMedia.length > 0 && mMedia[0].driveFileURL ? getDirectDriveImageUrl(mMedia[0].driveFileURL) : '';
-
-    const modalTitle = document.getElementById('holdModalTitle');
-    if (modalTitle) {
-      modalTitle.innerText = `Side-by-Side Review (Hold: ${hold.holdId} — ${hold.matchScore}% Match)`;
-    }
-
-    const modalBody = document.getElementById('holdModalBody');
-    if (modalBody) {
-      modalBody.innerHTML = `
-        <div class="comparison-columns-grid">
-          <!-- Column 1: Submitted Animal -->
-          <div class="comparison-column col-submitted">
-            <div class="comparison-col-header">
-              <span style="color:#0284c7;">🐾 Submitted Animal Record</span>
-              <span style="font-size:12px; background:#e0f2fe; color:#0369a1; padding:2px 8px; border-radius:10px;">Pending</span>
-            </div>
-
-            ${subPhotoUrl ? `<img src="${subPhotoUrl}" class="comp-photo-preview" />` : '<div style="height:120px; background:#e2e8f0; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b; margin-bottom:14px;">No Photo Submitted</div>'}
-
-            <div class="comp-field-row"><div class="comp-label">Animal Name:</div><div class="comp-value"><strong>${subAnimal.animalName || 'Unknown'}</strong></div></div>
-            <div class="comp-field-row"><div class="comp-label">Species / Type:</div><div class="comp-value">${subAnimal.animalType || 'Dog'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Sex / Gender:</div><div class="comp-value">${subAnimal.sex || 'Unknown'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Approx. Age:</div><div class="comp-value">${subAnimal.age || 'Unknown'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Breed:</div><div class="comp-value">${subAnimal.breedType || subAnimal.nativeDogType || 'Indie'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Area / Locality:</div><div class="comp-value"><strong>${subLoc.area || 'Unknown'}</strong></div></div>
-            <div class="comp-field-row"><div class="comp-label">GPS Pin:</div><div class="comp-value">${subLoc.gpsCoordinates || 'None'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Marks:</div><div class="comp-value">${subBase.identificationMarks || 'None reported'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Health Status:</div><div class="comp-value">${subBase.healthStatus || 'Healthy'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Behaviour:</div><div class="comp-value">${subBase.behavior || 'Friendly'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Contributor:</div><div class="comp-value">${subContrib.name || 'Anonymous'} (${subContrib.mobile || 'No mobile'})</div></div>
+    const html = `
+      <div class="detail-layout">
+        <div class="detail-left">
+          <div class="detail-avatar-container">
+            <div class="avatar-lg">${initials}</div>
+            <span class="badge-active">Active</span>
           </div>
 
-          <!-- Column 2: Existing Matched Profile -->
-          <div class="comparison-column col-existing">
-            <div class="comparison-col-header">
-              <span style="color:#d97706;">🐾 Matched Existing Profile</span>
-              <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:10px;">${hold.matchedCarProfileId}</span>
+          <div class="detail-title">${name}</div>
+          <div class="detail-subtitle">${animal.carProfileId}</div>
+
+          <div class="details-grid">
+            <div>
+              <div class="detail-item-label">Sex</div>
+              <div class="detail-item-value">${animal.sex || 'Unknown'}</div>
             </div>
+            <div>
+              <div class="detail-item-label">Estimated Age</div>
+              <div class="detail-item-value">${animal.age || 'Unknown'}</div>
+            </div>
+            <div>
+              <div class="detail-item-label">Animal Type</div>
+              <div class="detail-item-value">${animal.animalType}</div>
+            </div>
+            <div>
+              <div class="detail-item-label">Usual Area</div>
+              <div class="detail-item-value">${location ? location.area : 'Unknown'}</div>
+            </div>
+          </div>
 
-            ${mPhotoUrl ? `<img src="${mPhotoUrl}" class="comp-photo-preview" />` : '<div style="height:120px; background:#e2e8f0; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b; margin-bottom:14px;">No Photo in Record</div>'}
-
-            <div class="comp-field-row"><div class="comp-label">Animal Name:</div><div class="comp-value"><strong>${mAnimal.animalName || 'Unknown'}</strong></div></div>
-            <div class="comp-field-row"><div class="comp-label">CAR Profile ID:</div><div class="comp-value"><strong>${hold.matchedCarProfileId}</strong></div></div>
-            <div class="comp-field-row"><div class="comp-label">Species / Type:</div><div class="comp-value">${mAnimal.animalType || 'Dog'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Sex / Gender:</div><div class="comp-value">${mAnimal.sex || 'Unknown'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Approx. Age:</div><div class="comp-value">${mAnimal.age || 'Unknown'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Breed:</div><div class="comp-value">${mAnimal.breedType || mAnimal.nativeDogType || 'Indie'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Area / Locality:</div><div class="comp-value"><strong>${mLoc.area || 'Unknown'}</strong></div></div>
-            <div class="comp-field-row"><div class="comp-label">GPS Pin:</div><div class="comp-value">${mLoc.gpsCoordinates || 'None'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Marks:</div><div class="comp-value">${mBase.identificationMarks || 'None'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Health Status:</div><div class="comp-value">${mBase.healthStatus || 'Unknown'}</div></div>
-            <div class="comp-field-row"><div class="comp-label">Events in History:</div><div class="comp-value">${matched.events ? matched.events.length : 0} event(s) recorded</div></div>
+          <div class="profile-status-panel">
+            <div class="timeline-title">Baseline status</div>
+            <div class="details-grid">
+              <div><div class="detail-item-label">Current health</div><div class="detail-item-value">${baseline ? baseline.healthStatus || 'Unknown' : 'Unknown'}</div></div>
+              <div><div class="detail-item-label">Vaccinated</div><div class="detail-item-value">${baseline ? baseline.vaccinationStatus || 'Unknown' : 'Unknown'}</div></div>
+              <div><div class="detail-item-label">Sterilised</div><div class="detail-item-value">${baseline ? baseline.sterilisationStatus || 'Unknown' : 'Unknown'}</div></div>
+              <div><div class="detail-item-label">Behaviour</div><div class="detail-item-value">${baseline ? baseline.behavior || 'Unknown' : 'Unknown'}</div></div>
+              <div><div class="detail-item-label">ABC status</div><div class="detail-item-value">${baseline ? baseline.abcStatus || 'Not recorded' : 'Not recorded'}</div></div>
+              <div><div class="detail-item-label">ABC outcome</div><div class="detail-item-value">${baseline ? baseline.abcOutcome || 'Not recorded' : 'Not recorded'}</div></div>
+              <div><div class="detail-item-label">Identification marks</div><div class="detail-item-value">${baseline ? baseline.identificationMarks || 'Unknown' : 'Unknown'}</div></div>
+              <div><div class="detail-item-label">Other identification details</div><div class="detail-item-value">${baseline ? baseline.identificationOtherDetails || 'None' : 'None'}</div></div>
+            </div>
+            <div class="detail-item-label">Additional details</div>
+            <div class="detail-item-value">${baseline ? baseline.additionalDetails || 'None' : 'None'}</div>
           </div>
         </div>
-      `;
-    }
 
-    const modalFooter = document.getElementById('holdModalFooter');
-    if (modalFooter) {
-      modalFooter.innerHTML = `
-        <button type="button" class="btn-primary" style="background:#137333;" onclick="resolveHold('${hold.holdId}', 'APPROVE')">
-          ✅ Approve (Create New Profile)
-        </button>
-        <button type="button" class="btn-secondary" style="background:#e8f0fe; color:#1a73e8; border-color:#dadce0;" onclick="resolveHold('${hold.holdId}', 'CONFIRM_SAME')">
-          🔗 Confirm Same (Merge with ${hold.matchedCarProfileId})
-        </button>
-        <button type="button" class="btn-secondary" style="background:#fce8e6; color:#c5221f; border-color:#fad2cf;" onclick="resolveHold('${hold.holdId}', 'REJECT')">
-          ❌ Reject (Duplicate)
-        </button>
-        <button type="button" class="btn-secondary" onclick="closeHoldComparisonModal()">
-          Close
-        </button>
-      `;
-    }
+        <div class="detail-right">
+          <div class="timeline-header">
+            <div class="timeline-title">Continuous History</div>
+            <button type="button" class="btn-primary" onclick="openEventForm('${animal.carProfileId}')">Create new event record</button>
+          </div>
 
-    const modal = document.getElementById('holdComparisonModal');
-    if (modal) modal.style.display = 'flex';
+          <div class="timeline">
+            <div class="timeline-event">
+              <div class="event-date">${dateStr}</div>
+              <div class="event-name">Profile created</div>
+              <div class="event-desc">Baseline profile registered by ${contributor ? contributor.name : 'Unknown'}</div>
+              <div class="event-desc" style="margin-top: 8px;">
+                <strong>Health:</strong> ${baseline ? baseline.healthStatus : 'Unknown'} |
+                <strong>Vaccination:</strong> ${baseline ? baseline.vaccinationStatus : 'Unknown'} |
+                <strong>Sterilisation:</strong> ${baseline ? baseline.sterilisationStatus : 'Unknown'}
+              </div>
+              ${mediaHTML}
+            </div>
+            ${events.map(event => `<div class="timeline-event"><div class="event-date">${event.dateOfEvent || event.dateReported || 'Date unknown'}</div><div class="event-name">${event.eventType}</div><div class="event-desc">${event.eventDescription || event.outcomeCurrentStatus || 'Event recorded'}</div><div class="event-desc"><strong>Health:</strong> ${event.healthCondition || 'Unknown'} | <strong>Vaccinated:</strong> ${event.vaccinated || 'Unknown'} | <strong>Sterilised:</strong> ${event.sterilised || 'Unknown'}</div></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    (targetElement || document.getElementById('profileDisplay')).innerHTML = html;
   }
 
-  function closeHoldComparisonModal() {
-    const modal = document.getElementById('holdComparisonModal');
-    if (modal) modal.style.display = 'none';
-  }
-
-  function resolveHold(holdId, action) {
-    const label = action === 'APPROVE' ? 'APPROVE and create a new animal profile' : action === 'CONFIRM_SAME' ? 'CONFIRM as the SAME animal and merge' : 'REJECT as duplicate';
-    if (!confirm(`Are you sure you want to ${label} for Hold ID ${holdId}?`)) return;
-
-    showLoading(true);
-    google.script.run
-      .withSuccessHandler((res) => {
-        showLoading(false);
-        if (res && res.success) {
-          alert('✅ Hold resolved successfully: ' + res.status);
-          closeHoldComparisonModal();
-          loadAdminHolds();
-        } else {
-          alert('Error resolving hold: ' + ((res && res.error) || 'Unknown error'));
-        }
-      })
-      .withFailureHandler((err) => {
-        showLoading(false);
-        alert('Server Error: ' + err.message);
-      })
-      .apiResolveHold(holdId, action, '');
-  }
-
-  // --- 10. Utility Helpers -----------------------------------------------------
-  function copyToClipboard(text) {
-    if (!text) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('📋 Copied to clipboard: ' + text);
-      }).catch(() => {
-        prompt('Copy this ID:', text);
-      });
+  // Loading overlay
+  function showLoading(show) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (show) {
+      overlay.classList.add('active');
     } else {
-      prompt('Copy this ID:', text);
+      overlay.classList.remove('active');
     }
   }
 
-  function resetCreateForm() {
-    const sbcContainer = document.querySelector('.sbc-container');
-    if (sbcContainer) {
-      sbcContainer.querySelectorAll('input').forEach(i => i.value = '');
-      sbcContainer.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+  // Initialize on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    showPage('home');
+    const browseProfiles = document.getElementById('browseProfiles');
+    if (browseProfiles) {
+      browseProfiles.addEventListener('click', function(event) {
+        const button = event.target.closest('[data-profile-id]');
+        if (button) goToRecords(button.getAttribute('data-profile-id'));
+      });
     }
-    const successContainer = document.getElementById('profileSuccessContainer');
-    if (successContainer) successContainer.innerHTML = '';
-    const resultsContainer = document.getElementById('searchBeforeCreateResults');
-    if (resultsContainer) resultsContainer.style.display = 'none';
-    const previewEl = document.getElementById('sbcPhotoPreview');
-    if (previewEl) previewEl.innerHTML = '';
-    sbcUploadedFiles = [];
-    uploadedFiles = [];
-    showPage('create');
-  }
-
-  function resetEventForm(carProfileId) {
-    const form = document.getElementById('eventForm');
-    if (form) form.reset();
-    const successContainer = document.getElementById('eventSuccessContainer');
-    if (successContainer) successContainer.innerHTML = '';
-    eventUploadedFiles = [];
-    sterilizationUploadedFiles = [];
-    if (carProfileId) {
-      document.getElementById('eventCarProfileId').value = carProfileId;
-    }
-    switchEventTab('Vaccination or Preventive Care');
-  }
-
-  function closeMatchModal() {
-    const modal = document.getElementById('matchResultsModal');
-    if (modal) modal.style.display = 'none';
-  }
-
-  // --- 11. Explicit Window Bindings (for Google Apps Script HTML iframe sandbox) -
-  window.showPage = showPage;
-  window.getSbcGPSLocation = getSbcGPSLocation;
-  window.getContributorGPSLocation = getContributorGPSLocation;
-  window.getEventGPSLocation = getEventGPSLocation;
-  window.captureGPS = captureGPS;
-  window.getDirectDriveImageUrl = getDirectDriveImageUrl;
-  window.handleSbcAnimalTypeChange = handleSbcAnimalTypeChange;
-  window.handleSbcBreedTypeChange = handleSbcBreedTypeChange;
-  window.handleSbcPhotoSelect = handleSbcPhotoSelect;
-  window.handleSearchBeforeCreate = handleSearchBeforeCreate;
-  window.handleDirectCreateFromSbc = handleDirectCreateFromSbc;
-  window.autoFillProfileFormFromSbc = autoFillProfileFormFromSbc;
-  window.selectSameAnimal = selectSameAnimal;
-  window.selectDifferentAnimal = selectDifferentAnimal;
-  window.selectNotSure = selectNotSure;
-  window.closeMatchModal = closeMatchModal;
-  window.handleAnimalTypeChange = handleAnimalTypeChange;
-  window.handleNativeBreedChange = handleNativeBreedChange;
-  window.handleBreedTypeChange = handleBreedTypeChange;
-  window.handleCaregiverChange = handleCaregiverChange;
-  window.handleCaregiverTypeChange = handleCaregiverTypeChange;
-  window.handleCareTypeChange = handleCareTypeChange;
-  window.handleFileSelect = handleFileSelect;
-  window.handleEventFileSelect = handleEventFileSelect;
-  window.handleSterilizationFileSelect = handleSterilizationFileSelect;
-  window.handleProfileSubmit = handleProfileSubmit;
-  window.handleEventSubmit = handleEventSubmit;
-  window.switchEventTab = switchEventTab;
-  window.handleSearch = handleSearch;
-  window.handleSearchById = handleSearchById;
-  window.renderProfileDisplay = renderProfileDisplay;
-  window.loadSearchStats = loadSearchStats;
-  window.loadProfiles = loadProfiles;
-  window.loadAdminHolds = loadAdminHolds;
-  window.viewHoldComparison = viewHoldComparison;
-  window.closeHoldComparisonModal = closeHoldComparisonModal;
-  window.resolveHold = resolveHold;
-  window.copyToClipboard = copyToClipboard;
-  window.resetCreateForm = resetCreateForm;
-  window.resetEventForm = resetEventForm;
-
-  // --- 12. App Initialization --------------------------------------------------
-  function initApp() {
-    switchEventTab('Vaccination or Preventive Care');
-
-    const profileForm = document.getElementById('profileForm');
-    if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
-
-    const eventForm = document.getElementById('eventForm');
-    if (eventForm) eventForm.addEventListener('submit', handleEventSubmit);
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
-  } else {
-    initApp();
-  }
+  });
 </script>

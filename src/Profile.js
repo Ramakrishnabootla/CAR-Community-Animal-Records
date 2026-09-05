@@ -9,13 +9,6 @@
  * @return {Object} {success: boolean, carProfileId: string, error: string}
  */
 function apiSaveProfile(data) {
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(30000);
-  } catch (lockErr) {
-    return { success: false, error: 'Server busy processing another profile. Please retry in a few seconds.' };
-  }
-
   try {
     // 1. Validate complete profile data
     const validationResult = validateProfileData(data);
@@ -38,13 +31,13 @@ function apiSaveProfile(data) {
       contributorSheet.appendRow([
         contributorId,
         sanitizeString(data.contributor.name),
-        "'" + sanitizeString(data.contributor.mobile),
+        sanitizeString(data.contributor.mobile),
         sanitizeString(data.contributor.email),
         timestamp
       ]);
     }
 
-    // 3. Save Location (with GPS latitude/longitude from client-side HTML5 Geolocation)
+    // 3. Save Location
     const locationId = generateLocationID();
     const locationSheet = getSheet(CONFIG.sheetNames.locations);
     locationSheet.appendRow([
@@ -54,10 +47,7 @@ function apiSaveProfile(data) {
       sanitizeString(data.location.city),
       sanitizeString(data.location.area),
       sanitizeString(data.location.landmark),
-      sanitizeString(data.location.gpsCoordinates),
-      sanitizeString(data.location.gpsLatitude),
-      sanitizeString(data.location.gpsLongitude),
-      sanitizeString(data.location.gpsCapturedMethod || 'Manual Entry'),
+      sanitizeString(data.location.gpsLocation || data.location.gpsCoordinates),
       sanitizeString(data.location.seenRegularly),
       timestamp
     ]);
@@ -66,17 +56,22 @@ function apiSaveProfile(data) {
     const carProfileId = generateCARProfileID();
 
     // 5. Save Animal
-    const animalName = buildUniqueAnimalName(data.animal.animalName || 'Unknown');
+    let animalName = sanitizeString(data.animal.animalName);
+    if (!animalName) {
+      animalName = 'Unknown';
+    }
+    animalName = buildUniqueAnimalName(animalName);
+
     const animalSheet = getSheet(CONFIG.sheetNames.animals);
     animalSheet.appendRow([
-      "'" + carProfileId,
+      carProfileId,
       animalName,
-      sanitizeString(data.animal.animalType),
+      data.animal.animalType,
       sanitizeString(data.animal.breedType),
-      sanitizeString(data.animal.nativeDogType),
+      data.animal.animalType === 'Dog' ? data.animal.nativeDogType : '',
       sanitizeString(data.animal.breedOtherDetails),
-      sanitizeString(data.animal.sex),
-      sanitizeString(data.animal.age),
+      data.animal.sex || 'Unknown',
+      data.animal.age || 'Unknown',
       sanitizeString(data.animal.caregiverAnswer),
       sanitizeString(data.animal.caregiverType),
       sanitizeString(data.animal.caregiverOtherDetails),
@@ -92,10 +87,10 @@ function apiSaveProfile(data) {
     const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
     baselineSheet.appendRow([
       baselineId,
-      "'" + carProfileId,
-      sanitizeString(data.baselineStatus.healthStatus),
-      sanitizeString(data.baselineStatus.vaccinationStatus),
-      sanitizeString(data.baselineStatus.sterilisationStatus),
+      carProfileId,
+      data.baselineStatus.healthStatus || 'Unknown',
+      data.baselineStatus.vaccinationStatus || 'Unknown',
+      data.baselineStatus.sterilisationStatus || 'Unknown',
       sanitizeString(data.baselineStatus.behavior),
       sanitizeString(data.baselineStatus.abcStatus),
       sanitizeString(data.baselineStatus.abcOutcome),
@@ -105,13 +100,13 @@ function apiSaveProfile(data) {
       timestamp
     ]);
 
-    // 7. Save Media (If any uploaded photos/documents) - Now uses animal-type subfolders and renaming
+    // 7. Save Media (If any uploaded photos/documents)
     if (data.media && data.media.length > 0) {
-      const contributorName = sanitizeString(data.contributor.name);
-      const animalType = data.animal.animalType || 'Other';
+      const mediaFolder = getOrCreateMediaFolder();
+      const animalFolder = getOrCreateChildFolder(mediaFolder, carProfileId);
 
       data.media.forEach(fileObj => {
-        saveMediaFile(carProfileId, contributorName, animalType, fileObj);
+        saveMediaFile(carProfileId, animalFolder.getId(), fileObj);
       });
     }
 
@@ -131,8 +126,6 @@ function apiSaveProfile(data) {
       success: false,
       error: 'Server error: ' + err.toString()
     };
-  } finally {
-    try { lock.releaseLock(); } catch (e) {}
   }
 }
 
@@ -146,10 +139,10 @@ function findContributorByMobile(mobile) {
   const data = sheet.getDataRange().getValues();
 
   // Clean the mobile number to compare
-  const cleanMobileSearch = String(mobile).replace(/[\s\-+\']/g, '');
+  const cleanMobileSearch = mobile.replace(/[\s\-+]/g, '');
 
   for (let i = 1; i < data.length; i++) {
-    const cleanMobileRow = String(data[i][2]).replace(/[\s\-+\']/g, '');
+    const cleanMobileRow = String(data[i][2]).replace(/[\s\-+]/g, '');
     if (cleanMobileRow === cleanMobileSearch) {
       return data[i][0]; // Return ContributorID
     }
@@ -178,8 +171,6 @@ function buildUniqueAnimalName(name) {
     })
     .filter(value => value > 0);
 
-  // BUG-07 FIX: When no existing suffixes exist, nextIndex should start at 1 (not 2).
-  // suffixes filters for values > 0, so when empty, max should be 0, giving nextIndex = 1.
-  const nextIndex = suffixes.length > 0 ? Math.max(...suffixes) + 1 : 1;
+  const nextIndex = Math.max(1, ...suffixes, 1) + 1;
   return cleanName + ' (' + nextIndex + ')';
 }

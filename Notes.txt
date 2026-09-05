@@ -8,4 +8,4 @@ clasp update-deployment AKfycbzlhxsR2K_HinLzkcWIFexb9m8bLNM1RkIyLkn1ZnMZb22BPUPd
 
 Head Deployment link:-  https://script.google.com/macros/s/AKfycbyExId8iToQRdC3S8DIqLRlEKKRvYT0bwEbVxnkiCE/exec
 
-Deployment @36 : https://script.google.com/macros/s/AKfycbzlhxsR2K_HinLzkcWIFexb9m8bLNM1RkIyLkn1ZnMZb22BPUPd9TsbtcBaB2mR2xo/exec
+Deployment @36 : https://script.google.com/macros/s/AKfycbzlhxsR2K_HinLzkcWIFexb9m8bLNM1RkIyLkn1ZnMZb22BPUPd9TsbtcBaB2mR2xo/exec 
