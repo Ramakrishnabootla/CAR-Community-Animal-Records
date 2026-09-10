@@ -5,6 +5,7 @@
   let eventUploadedFiles = [];
   let isSubmitting = false;
   let cachedPendingHolds = [];
+  let cachedGalleryProfiles = [];
   let isAdmin = sessionStorage.getItem('carAdminSession') === 'true';
   const additionalEventQuestionnaires = [
     ['Rescue', 'Rescue details, reason, current status, and organisation/person involved.'],
@@ -413,6 +414,7 @@
         loadSearchStats();
         loadProfiles();
       } else if (pageName === 'admin') {
+        loadAdminPendingRecords();
         loadAdminHolds();
       } else if (pageName === 'event') {
         switchEventTab('Vaccination or Preventive Care');
@@ -1550,6 +1552,10 @@
   }
 
   function startAnimalEdit(carProfileId, recordJson) {
+    if (!isAdmin) {
+      alert('🔒 Access Restricted: Editing animal profiles is restricted to administrators.');
+      return;
+    }
     const form = document.getElementById('profileForm');
     if (!form) return;
     form.reset();
@@ -1579,11 +1585,22 @@
   }
 
   function startEventEdit(carProfileId, eventId, recordJson) {
+    if (!isAdmin) {
+      alert('🔒 Access Restricted: Editing event records is restricted to administrators.');
+      return;
+    }
     const form = document.getElementById('eventForm');
     if (!form) return;
+    const eventRecord = JSON.parse(decodeEditValue(recordJson));
+
+    // W3.6 Protection: Public users cannot edit verified records
+    if (!isAdmin && (eventRecord.verificationStatus || '').toLowerCase() === 'verified') {
+      alert('🔒 Access Restricted: This record has been officially verified by an administrator and cannot be edited by public users.');
+      return;
+    }
+
     form.reset();
     const carId = decodeEditValue(carProfileId);
-    const eventRecord = JSON.parse(decodeEditValue(recordJson));
     const formFields = eventRecord.formFields || {};
     const formValues = {
       preventiveCareType: formFields.preventivecaretype || eventRecord.eventCategory, preventiveCareOtherDetails: formFields.preventivecareotherdetails,
@@ -1615,6 +1632,10 @@
   }
 
   function submitEditCorrections(form, messageId, targetTable, targetRecordId, carProfileId, snapshotKey) {
+    if (!isAdmin) {
+      alert('🔒 Access Restricted: Only administrators can save registry corrections.');
+      return;
+    }
     const formData = new FormData(form);
     const message = document.getElementById(messageId);
     const edits = Array.from(form.querySelectorAll('[data-edit-field]')).map(input => ({
@@ -1759,7 +1780,7 @@
     if (!container) return;
     container.innerHTML = events.length ? events.map(e => `
         <div class="timeline-item" style="border-left:3px solid #2D7A5F; padding-left:16px; margin-bottom:20px;">
-          <div class="timeline-date" style="font-weight:700; color:#2D7A5F;">${e.dateOfEvent || e.timestamp} | ${e.eventType} <button type="button" class="btn-secondary" onclick="startEventEdit('${encodeEditValue(e.carProfileId || '')}','${encodeEditValue(e.eventId || '')}','${encodeEditValue(JSON.stringify(e))}')">Edit event</button></div>
+          <div class="timeline-date" style="font-weight:700; color:#2D7A5F;">${e.dateOfEvent || e.timestamp} | ${e.eventType} ${isAdmin ? `<button type="button" class="btn-secondary" onclick="startEventEdit('${encodeEditValue(e.carProfileId || '')}','${encodeEditValue(e.eventId || '')}','${encodeEditValue(JSON.stringify(e))}')">Edit event</button>` : ((e.verificationStatus || '').toLowerCase() === 'verified' ? '<span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#e6f4ea; color:#137333; padding:2px 8px; border-radius:10px; font-weight:700; margin-left:8px;">🔒 Verified Record</span>' : '')}</div>
         <div class="timeline-content" style="margin-top:6px;">
           <p><strong>Description:</strong> ${escapeHtml(e.eventDescription || e.eventCategory || 'No description')}</p>
           <p><strong>Health:</strong> ${escapeHtml(e.healthCondition || 'Unknown')} | <strong>Vaccinated:</strong> ${escapeHtml(e.vaccinated || 'Unknown')} | <strong>Sterilised:</strong> ${escapeHtml(e.sterilised || 'Unknown')}</p>
@@ -1841,7 +1862,7 @@
             <div class="summary-title-row">
               <span class="profile-car-id" style="margin-bottom:0;">${a.carProfileId}</span>
               <h2 class="summary-name" style="margin:0;">${escapeHtml(a.animalName || 'Unnamed Animal')}</h2>
-              <button type="button" class="btn-secondary" style="padding:4px 12px; font-size:13px; margin-left:auto;" onclick="startAnimalEdit('${encodeEditValue(a.carProfileId || '')}','${encodeEditValue(JSON.stringify({ animal: a, location: l, baselineStatus: b }))}')">Edit profile</button>
+              ${isAdmin ? `<button type="button" class="btn-secondary" style="padding:4px 12px; font-size:13px; margin-left:auto;" onclick="startAnimalEdit('${encodeEditValue(a.carProfileId || '')}','${encodeEditValue(JSON.stringify({ animal: a, location: l, baselineStatus: b }))}')">Edit profile</button>` : ''}
             </div>
             
             <div class="summary-meta-line">
@@ -1911,9 +1932,13 @@
     `;
   }
 
-  function showLoading(active) {
+  function showLoading(active = true) {
     const el = document.getElementById('loadingOverlay');
-    if (el) el.className = active ? 'loading-overlay active' : 'loading-overlay';
+    if (el) el.className = (active !== false) ? 'loading-overlay active' : 'loading-overlay';
+  }
+
+  function hideLoading() {
+    showLoading(false);
   }
 
   function loadSearchStats() {
@@ -1954,9 +1979,236 @@
       .apiListProfiles();
   }
 
-  // --- 9. Admin Hold Queue & Side-by-Side Review --------------------------------
+  // --- 9. Admin Verification & Management Portal (W3.6 & W3.7) -----------------
+  let currentAdminTab = 'pending';
+
+  function switchAdminTab(tabName) {
+    currentAdminTab = tabName;
+    ['pending', 'holds', 'audit'].forEach(t => {
+      const btn = document.getElementById(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+      const pane = document.getElementById(`tabPane${t.charAt(0).toUpperCase() + t.slice(1)}`);
+      if (btn) btn.classList.toggle('active', t === tabName);
+      if (pane) pane.style.display = (t === tabName) ? 'block' : 'none';
+    });
+
+    if (tabName === 'pending') {
+      loadAdminPendingRecords();
+    } else if (tabName === 'holds') {
+      loadAdminHolds();
+    } else if (tabName === 'audit') {
+      loadAdminAuditLogs();
+    }
+  }
+
+  function refreshAdminQueue() {
+    loadAdminPendingRecords();
+    loadAdminHolds();
+    if (currentAdminTab === 'audit') {
+      loadAdminAuditLogs();
+    }
+  }
+
+  /**
+   * W3.6: Load pending unverified records (Events & Profiles)
+   */
+  function loadAdminPendingRecords() {
+    const container = document.getElementById('adminPendingList');
+    const badge = document.getElementById('badgePendingCount');
+    if (!container) return;
+
+    container.innerHTML = '<p class="dash-loading">Loading unverified records...</p>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          container.innerHTML = '<p class="form-message error">Failed to load pending records: ' + ((res && res.error) || 'Unknown error') + '</p>';
+          return;
+        }
+
+        const events = res.pendingEvents || [];
+        const profiles = res.pendingProfiles || [];
+        const totalPending = events.length;
+        if (badge) badge.textContent = String(totalPending);
+
+        if (totalPending === 0) {
+          container.innerHTML = '<div style="color:#137333; padding:20px; background:#e6f4ea; border-radius:10px; font-weight:600; border:1px solid #c2e7cd;">✅ All records are currently reviewed and verified! No pending submissions.</div>';
+          return;
+        }
+
+        let html = '';
+        events.forEach(function(e) {
+          const dateStr = e.dateOfEvent || (e.timestamp ? String(e.timestamp).slice(0, 10) : '—');
+          html += `
+            <div class="admin-record-card">
+              <div class="admin-record-header">
+                <div>
+                  <span class="profile-car-id" style="cursor:pointer;" onclick="handleSearchById('${escapeHtml(e.carProfileId)}')">${escapeHtml(e.carProfileId)}</span>
+                  <strong style="margin-left:8px; font-size:16px;">${escapeHtml(e.animalName || 'Animal')}</strong>
+                  <span style="color:var(--text-light); font-size:13px; margin-left:4px;">(${escapeHtml(e.animalType || '')})</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span style="font-size:12px; background:#fef3c7; color:#b45309; padding:3px 10px; border-radius:12px; font-weight:700;">
+                    ${escapeHtml(e.verificationStatus || 'Unverified')}
+                  </span>
+                  <small style="color:var(--text-light); font-size:11px;">Event ID: ${escapeHtml(e.eventId)}</small>
+                </div>
+              </div>
+
+              <div style="font-size:14px; color:var(--text-dark); margin-bottom:8px;">
+                <strong>Event:</strong> <span class="dash-event-type-pill">${escapeHtml(e.eventType)}</span> &bull;
+                <strong>Date:</strong> ${escapeHtml(dateStr)} &bull;
+                <strong>Area:</strong> ${escapeHtml(e.area || 'Unknown area')}
+              </div>
+
+              <div style="font-size:13px; color:var(--text-light); margin-bottom:12px;">
+                <span>Source: ${escapeHtml(e.source || 'Self-reported')}</span>
+                ${e.outcomeCurrentStatus ? ` &bull; <span>Status: <strong>${escapeHtml(e.outcomeCurrentStatus)}</strong></span>` : ''}
+              </div>
+
+              <div class="admin-actions-bar">
+                <button type="button" class="btn-admin-approve" onclick="adminApproveEvent('${encodeEditValue(e.eventId)}')">
+                  ✅ Approve (Verify)
+                </button>
+                <button type="button" class="btn-admin-reject" onclick="adminRejectEvent('${encodeEditValue(e.eventId)}')">
+                  ❌ Reject (Flag)
+                </button>
+                <button type="button" class="btn-secondary" style="font-size:13px; padding:8px 14px;" onclick="handleSearchById('${escapeHtml(e.carProfileId)}')">
+                  🔍 View Full Profile
+                </button>
+              </div>
+            </div>
+          `;
+        });
+
+        container.innerHTML = html;
+      })
+      .withFailureHandler(function(err) {
+        if (container) container.innerHTML = '<p class="form-message error">Error loading pending records: ' + err.message + '</p>';
+      })
+      .apiGetPendingRecords();
+  }
+
+  function adminApproveEvent(encodedEventId) {
+    const eventId = decodeEditValue(encodedEventId);
+    if (!eventId) return;
+
+    const notes = prompt(`Approve and verify event (${eventId})?\n\nEnter optional admin approval notes:`, "Verified by administrator");
+    if (notes === null) return; // user cancelled
+
+    showLoading(true);
+    google.script.run
+      .withSuccessHandler(function(res) {
+        showLoading(false);
+        if (res && res.success) {
+          alert(`✅ Event ${eventId} successfully approved and marked as Verified!`);
+          refreshAdminQueue();
+          if (typeof loadDashboard === 'function') loadDashboard();
+        } else {
+          alert('Approval failed: ' + ((res && res.error) || 'Unknown error'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Server error: ' + err.message);
+      })
+      .apiApproveRecord(eventId, notes);
+  }
+
+  function adminRejectEvent(encodedEventId) {
+    const eventId = decodeEditValue(encodedEventId);
+    if (!eventId) return;
+
+    const reason = prompt(`Reject event (${eventId})?\n\nPlease enter the rejection reason:`, "Duplicate or invalid report");
+    if (!reason) return; // user cancelled or blank
+
+    showLoading(true);
+    google.script.run
+      .withSuccessHandler(function(res) {
+        showLoading(false);
+        if (res && res.success) {
+          alert(`❌ Event ${eventId} marked as Rejected.`);
+          refreshAdminQueue();
+        } else {
+          alert('Rejection failed: ' + ((res && res.error) || 'Unknown error'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Server error: ' + err.message);
+      })
+      .apiRejectRecord(eventId, reason);
+  }
+
+  /**
+   * W3.6: Load Audit Corrections Log
+   */
+  function loadAdminAuditLogs() {
+    const container = document.getElementById('adminAuditList');
+    if (!container) return;
+
+    container.innerHTML = '<p class="dash-loading">Loading audit corrections log...</p>';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          container.innerHTML = '<p class="form-message error">Failed to load audit logs: ' + ((res && res.error) || 'Unknown error') + '</p>';
+          return;
+        }
+
+        const logs = res.corrections || [];
+        if (logs.length === 0) {
+          container.innerHTML = '<p class="info-text" style="padding:20px; background:#fff; border:1px solid var(--border-color); border-radius:8px;">No audit corrections recorded yet. All changes and admin reviews are logged here.</p>';
+          return;
+        }
+
+        const rows = logs.map(function(item) {
+          const dateStr = item.timestamp ? String(item.timestamp).replace('T', ' ').slice(0, 19) : '—';
+          return `
+            <tr>
+              <td><strong>${escapeHtml(item.correctionId)}</strong><br><small style="color:var(--text-light);">${escapeHtml(dateStr)}</small></td>
+              <td>${escapeHtml(item.targetTable)}<br><small style="color:var(--primary-color);">${escapeHtml(item.targetRecordId)}</small></td>
+              <td><span class="dash-car-id-pill">${escapeHtml(item.carId)}</span></td>
+              <td><strong>${escapeHtml(item.fieldName)}</strong></td>
+              <td><span class="audit-diff-old">${escapeHtml(item.oldValue || '(blank)')}</span></td>
+              <td><span class="audit-diff-new">${escapeHtml(item.newValue || '(blank)')}</span></td>
+              <td>${escapeHtml(item.correctionReason || '—')}</td>
+              <td><small style="color:var(--text-light); font-weight:600;">${escapeHtml(item.modifiedBy || 'Admin')}</small></td>
+            </tr>
+          `;
+        }).join('');
+
+        container.innerHTML = `
+          <div style="overflow-x:auto;">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>Correction ID</th>
+                  <th>Target Record</th>
+                  <th>CAR ID</th>
+                  <th>Field</th>
+                  <th>Old Value</th>
+                  <th>New Value</th>
+                  <th>Reason</th>
+                  <th>Modified By</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        `;
+      })
+      .withFailureHandler(function(err) {
+        container.innerHTML = '<p class="form-message error">Error loading audit log: ' + err.message + '</p>';
+      })
+      .apiGetAuditCorrections();
+  }
+
+  /**
+   * W3.7: Enhanced Admin Hold Queue with Match Confidence % Badge
+   */
   function loadAdminHolds() {
     const container = document.getElementById('adminHoldList');
+    const badge = document.getElementById('badgeHoldsCount');
     if (!container) return;
     container.innerHTML = '<p style="color:#2D7A5F; font-weight:600;">Loading pending verification holds...</p>';
 
@@ -1966,8 +2218,11 @@
           container.innerHTML = '<p class="form-message error">Failed to load holds: ' + ((res && res.error) || 'Unknown error') + '</p>';
           return;
         }
-        if (!res.holds || res.holds.length === 0) {
-          container.innerHTML = '<p style="color:#137333; padding:18px; background:#e6f4ea; border-radius:8px; font-weight:600;">✅ No pending holds. All submissions have been reviewed.</p>';
+        const count = (res.holds && res.holds.length) || 0;
+        if (badge) badge.textContent = String(count);
+
+        if (count === 0) {
+          container.innerHTML = '<p style="color:#137333; padding:18px; background:#e6f4ea; border-radius:8px; font-weight:600; border:1px solid #c2e7cd;">✅ No pending holds. All submissions have been reviewed.</p>';
           cachedPendingHolds = [];
           return;
         }
@@ -1985,12 +2240,20 @@
           const submittedDogName = animal.animalName || 'Unnamed Submitted Animal';
           const matchedDogName = matchedAnimal.animalName || 'Existing Record';
 
+          // W3.7 Prominent Match Confidence percentage badge
+          const score = h.matchScore || 50;
+          let scoreBg = '#f59e0b';
+          if (score >= 70) scoreBg = '#dc2626';
+          else if (score < 50) scoreBg = '#16a34a';
+
           html += `
             <div class="admin-hold-card">
               <div class="admin-hold-header">
                 <div>
                   <span class="profile-car-id" style="margin-right:8px;">${h.holdId}</span>
-                  <span class="match-score-badge" style="background:#f59e0b; color:#fff; padding:3px 8px; border-radius:4px; font-weight:700; font-size:12px;">${h.matchScore}% Match Score</span>
+                  <span class="match-score-badge" style="background:${scoreBg}; color:#fff; padding:4px 10px; border-radius:12px; font-weight:800; font-size:12px;">
+                    🎯 ${score}% Match Confidence
+                  </span>
                 </div>
                 <div>
                   <button type="button" class="btn-eye" onclick="viewHoldComparison('${h.holdId}')">
@@ -2034,6 +2297,9 @@
       .apiGetPendingHolds();
   }
 
+  /**
+   * W3.7: Side-by-side duplicate comparison modal with confidence badge
+   */
   function viewHoldComparison(holdId) {
     const hold = cachedPendingHolds.find(h => String(h.holdId) === String(holdId));
     if (!hold) {
@@ -2054,16 +2320,39 @@
     const mLoc = matched.location || {};
     const mBase = matched.baselineStatus || {};
     const mMedia = matched.media || [];
-    const mPhotoUrl = mMedia.length > 0 && mMedia[0].driveFileURL ? getDirectDriveImageUrl(mMedia[0].driveFileURL) : '';
+    // Use profileImageUrl (set when media is loaded via apiSearchProfile with includeDocuments=true)
+    // falling back to first media item's driveFileURL if present
+    const mPhotoUrl = matched.profileImageUrl ||
+      (mMedia.length > 0 && mMedia[0].driveFileURL ? getDirectDriveImageUrl(mMedia[0].driveFileURL) : '') ||
+      (mMedia.length > 0 && mMedia[0].driveFileId ? getDirectDriveImageUrl(mMedia[0].driveFileId) : '');
+
+    const score = hold.matchScore || 50;
+    let scoreColor = '#b45309';
+    let scoreBg = '#fffbeb';
+    let scoreBorder = '#fde68a';
+    if (score >= 70) {
+      scoreColor = '#991b1b';
+      scoreBg = '#fef2f2';
+      scoreBorder = '#fecaca';
+    }
 
     const modalTitle = document.getElementById('holdModalTitle');
     if (modalTitle) {
-      modalTitle.innerText = `Side-by-Side Review (Hold: ${hold.holdId} — ${hold.matchScore}% Match)`;
+      modalTitle.innerText = `Side-by-Side Duplicate Review (Hold ID: ${hold.holdId})`;
     }
 
     const modalBody = document.getElementById('holdModalBody');
     if (modalBody) {
       modalBody.innerHTML = `
+        <!-- W3.7 Confidence Banner -->
+        <div style="background:${scoreBg}; border:1px solid ${scoreBorder}; border-radius:10px; padding:12px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+          <div>
+            <strong style="font-size:16px; color:${scoreColor};">🎯 Match Confidence Score: ${score}%</strong>
+            <div style="font-size:12px; color:#6b7280; margin-top:2px;">Scored based on Area, Identification Marks, Species, Sex, and Name matching. Compare attributes carefully before merging.</div>
+          </div>
+          <span style="font-size:12px; background:#ffffff; color:#374151; border:1px solid #d1d5db; padding:4px 10px; border-radius:12px; font-weight:700;">Hold: ${hold.holdId}</span>
+        </div>
+
         <div class="comparison-columns-grid">
           <!-- Column 1: Submitted Animal -->
           <div class="comparison-column col-submitted">
@@ -2148,125 +2437,103 @@
       .withSuccessHandler((res) => {
         showLoading(false);
         if (res && res.success) {
-          alert('✅ Hold resolved successfully: ' + res.status);
+          alert(`Hold successfully resolved: ${res.status}`);
           closeHoldComparisonModal();
-          loadAdminHolds();
+          refreshAdminQueue();
         } else {
-          alert('Error resolving hold: ' + ((res && res.error) || 'Unknown error'));
+          alert(`Failed to resolve hold: ${res && res.error ? res.error : 'Unknown error'}`);
         }
       })
       .withFailureHandler((err) => {
         showLoading(false);
-        alert('Server Error: ' + err.message);
+        alert('Server error: ' + err.message);
       })
-      .apiResolveHold(holdId, action, '');
+      .apiResolveHold(holdId, action, 'Resolved via Admin Review Modal');
   }
 
-  // --- 10. Utility Helpers -----------------------------------------------------
+  window.loadAdminHolds = loadAdminHolds;
+  window.viewHoldComparison = viewHoldComparison;
+  window.closeHoldComparisonModal = closeHoldComparisonModal;
+  window.resolveHold = resolveHold;
+  window.switchAdminTab = switchAdminTab;
+  window.refreshAdminQueue = refreshAdminQueue;
+  window.loadAdminPendingRecords = loadAdminPendingRecords;
+  window.adminApproveEvent = adminApproveEvent;
+  window.adminRejectEvent = adminRejectEvent;
+  window.loadAdminAuditLogs = loadAdminAuditLogs;
+  window.loadGallery = loadGallery;
+  window.filterGallery = filterGallery;
+  window.resetGalleryFilters = resetGalleryFilters;
+  window.openProfileFromGallery = openProfileFromGallery;
+  window.toggleFullHistory = toggleFullHistory;
+  window.goBackFromProfile = goBackFromProfile;
+  function triggerSeedDemoData() {
+    if (!confirm('This will seed realistic demonstration records for all 4 species (Dogs, Cats, Cows, Birds), longitudinal care histories, duplicate review holds, and audit entries.\n\nProceed?')) return;
+    showLoading(true);
+    google.script.run
+      .withSuccessHandler(function(res) {
+        showLoading(false);
+        if (res && res.success) {
+          alert('✅ ' + (res.message || 'Demo data seeded successfully!') + `\nCreated ${res.profilesCount} profiles, ${res.eventsCount} events.`);
+          refreshAdminQueue();
+          if (typeof loadDashboard === 'function') loadDashboard();
+          if (typeof loadGallery === 'function') loadGallery();
+        } else {
+          alert('Failed to seed demo data: ' + ((res && res.error) || 'Unknown error'));
+        }
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Server error while seeding demo data: ' + err.message);
+      })
+      .apiSeedDemoData();
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      alert('Copied to clipboard: ' + text);
+    } catch (e) {
+      prompt('Copy ID:', text);
+    }
+    document.body.removeChild(ta);
+  }
+
   function copyToClipboard(text) {
     if (!text) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        alert('📋 Copied to clipboard: ' + text);
-      }).catch(() => {
-        prompt('Copy this ID:', text);
+      navigator.clipboard.writeText(text).then(function() {
+        alert('Copied to clipboard: ' + text);
+      }).catch(function() {
+        fallbackCopy(text);
       });
     } else {
-      prompt('Copy this ID:', text);
+      fallbackCopy(text);
     }
   }
 
   function resetCreateForm() {
-    const sbcContainer = document.querySelector('.sbc-container');
-    if (sbcContainer) sbcContainer.style.display = '';
-    if (sbcContainer) {
-      sbcContainer.querySelectorAll('input').forEach(i => i.value = '');
-      sbcContainer.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
-    }
-    const successContainer = document.getElementById('profileSuccessContainer');
-    if (successContainer) successContainer.innerHTML = '';
-    const resultsContainer = document.getElementById('searchBeforeCreateResults');
-    if (resultsContainer) resultsContainer.style.display = 'none';
-    const previewEl = document.getElementById('sbcPhotoPreview');
-    if (previewEl) previewEl.innerHTML = '';
-    sbcUploadedFiles = [];
-    uploadedFiles = [];
-    activeRegistryEdit = null;
-    const contributorSection = document.getElementById('profileContributorSection');
-    if (contributorSection) {
-      contributorSection.style.display = '';
-      contributorSection.querySelectorAll('input, select, textarea').forEach(field => { field.disabled = false; });
-    }
-    const pageTitle = document.getElementById('createPageTitle');
-    const pageSubtitle = document.getElementById('createPageSubtitle');
-    if (pageTitle) pageTitle.textContent = 'Add to CAR';
-    if (pageSubtitle) pageSubtitle.textContent = 'Ready to create a profile? Create an animal profile for someone you take care of or know of.';
-    const profileSubmit = document.querySelector('#profileForm button[type="submit"]');
-    if (profileSubmit) profileSubmit.textContent = 'Create Profile';
-    showPage('create');
+    const form = document.getElementById('profileForm');
+    if (form) form.reset();
   }
 
   function resetEventForm(carProfileId) {
     const form = document.getElementById('eventForm');
     if (form) form.reset();
-    const successContainer = document.getElementById('eventSuccessContainer');
-    if (successContainer) successContainer.innerHTML = '';
-    eventUploadedFiles = [];
-    activeRegistryEdit = null;
-    const eventSubmit = document.querySelector('#eventForm button[type="submit"]');
-    if (eventSubmit) eventSubmit.textContent = 'Submit';
     if (carProfileId) {
-      document.getElementById('eventCarProfileId').value = carProfileId;
+      const el = document.getElementById('eventCarProfileId');
+      if (el) el.value = carProfileId;
     }
-    switchEventTab('Vaccination or Preventive Care');
   }
 
-  function closeMatchModal() {
-    const modal = document.getElementById('matchResultsModal');
-    if (modal) modal.style.display = 'none';
-  }
-
-  // --- 11. Explicit Window Bindings (for Google Apps Script HTML iframe sandbox) -
-  window.showPage = showPage;
-  window.getSbcGPSLocation = getSbcGPSLocation;
-  window.getContributorGPSLocation = getContributorGPSLocation;
-  window.getEventGPSLocation = getEventGPSLocation;
-  window.captureGPS = captureGPS;
-  window.getDirectDriveImageUrl = getDirectDriveImageUrl;
-  window.handleSbcAnimalTypeChange = handleSbcAnimalTypeChange;
-  window.handleSbcBreedTypeChange = handleSbcBreedTypeChange;
-  window.handleSbcPhotoSelect = handleSbcPhotoSelect;
-  window.handleSearchBeforeCreate = handleSearchBeforeCreate;
-  window.handleDirectCreateFromSbc = handleDirectCreateFromSbc;
-  window.autoFillProfileFormFromSbc = autoFillProfileFormFromSbc;
-  window.selectSameAnimal = selectSameAnimal;
-  window.selectDifferentAnimal = selectDifferentAnimal;
-  window.selectNotSure = selectNotSure;
-  window.closeMatchModal = closeMatchModal;
-  window.handleAnimalTypeChange = handleAnimalTypeChange;
-  window.handleNativeBreedChange = handleNativeBreedChange;
-  window.handleBreedTypeChange = handleBreedTypeChange;
-  window.handleCaregiverChange = handleCaregiverChange;
-  window.handleCaregiverTypeChange = handleCaregiverTypeChange;
-  window.handleCareTypeChange = handleCareTypeChange;
-  window.handleFileSelect = handleFileSelect;
-  window.handleEventFileSelect = handleEventFileSelect;
-  window.handleProfileSubmit = handleProfileSubmit;
-  window.handleEventSubmit = handleEventSubmit;
-  window.switchEventTab = switchEventTab;
-  window.handleSearch = handleSearch;
-  window.handleSearchById = handleSearchById;
-  window.renderProfileDisplay = renderProfileDisplay;
-  window.startAnimalEdit = startAnimalEdit;
-  window.startEventEdit = startEventEdit;
-  window.handleAnimalEditSubmit = handleAnimalEditSubmit;
-  window.handleEventEditSubmit = handleEventEditSubmit;
-  window.loadSearchStats = loadSearchStats;
-  window.loadProfiles = loadProfiles;
-  window.loadAdminHolds = loadAdminHolds;
-  window.viewHoldComparison = viewHoldComparison;
-  window.closeHoldComparisonModal = closeHoldComparisonModal;
-  window.resolveHold = resolveHold;
+  window.triggerSeedDemoData = triggerSeedDemoData;
   window.copyToClipboard = copyToClipboard;
   window.resetCreateForm = resetCreateForm;
   window.resetEventForm = resetEventForm;
@@ -2306,7 +2573,11 @@
         if (btn) btn.disabled = false;
         if (loadingEl) loadingEl.style.display = 'none';
         if (!result || !result.success) {
-          console.error('Dashboard load failed:', result && result.error);
+          console.error('Dashboard load failed:', result ? result.error : 'Empty response from server');
+          var container = document.getElementById('dashRecentEventsContainer');
+          if (container) {
+            container.innerHTML = '<div class="dash-empty-state">No dashboard data available: ' + escapeHtml((result && result.error) || 'Please seed demo data or record events to populate.') + '</div>';
+          }
           return;
         }
         renderDashboardStats(result);
@@ -2315,6 +2586,10 @@
         if (btn) btn.disabled = false;
         if (loadingEl) loadingEl.style.display = 'none';
         console.error('Dashboard API error:', err);
+        var container = document.getElementById('dashRecentEventsContainer');
+        if (container) {
+          container.innerHTML = '<div class="dash-empty-state">Server error loading dashboard: ' + escapeHtml(err.message || String(err)) + '</div>';
+        }
       })
       .apiGetDashboardStats();
   }
@@ -2420,7 +2695,7 @@
 
 
   // ── Phase 4: Gallery View (W3.2) ──────────────────────────────────────────
-  let cachedGalleryProfiles = [];
+  cachedGalleryProfiles = [];
 
   /**
    * loadGallery()

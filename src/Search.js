@@ -375,7 +375,7 @@ function apiGetPendingHolds() {
       let matchedProfile = null;
       if (matchedCarProfileId) {
         try {
-          const profileRes = apiSearchProfile(matchedCarProfileId);
+          const profileRes = apiSearchProfile(matchedCarProfileId, true);
           if (profileRes && profileRes.success && profileRes.profile) {
             matchedProfile = profileRes.profile;
           }
@@ -711,69 +711,74 @@ function apiGetSearchStats() {
   }
 }
 
-// =============================================================================
-// WEEK 3 — PHASE 1: Dashboard, Gallery & Profile Summary Backend APIs
-// =============================================================================
-
 /**
- * W3.1 / W3.8 — Live Dashboard Statistics
- * Calculates all summary indicators directly from CAR sheets.
- * Called by the frontend Dashboard view.
+ * W3.1 — Dashboard Statistics
+ * Returns operational metrics computed live across CAR sheets.
  *
  * @return {Object} {
- *   success, totalProfiles, totalEvents, vaccinated, sterilised,
- *   healthy, underTreatment, communityReports, reviewQueue,
- *   speciesBreakdown: {Dog,Cat,Cow,Bird,Other},
- *   recentEvents: [{eventId,carProfileId,animalType,eventType,dateOfEvent,area,outcomeCurrentStatus}]
+ *   success: boolean,
+ *   totalProfiles: number,
+ *   totalEvents: number,
+ *   vaccinated: number,
+ *   sterilised: number,
+ *   healthy: number,
+ *   underTreatment: number,
+ *   communityReports: number,
+ *   reviewQueue: number,
+ *   speciesBreakdown: { Dog: n, Cat: n, Cow: n, Bird: n, Other: n },
+ *   recentEvents: Array<Object>
  * }
  */
 function apiGetDashboardStats() {
   try {
-    var spreadsheet = getSpreadsheet();
+    var ss = getSpreadsheet();
 
-    // 1. Total animal profiles
+    // 1. Total Profiles & Species Breakdown
     var animalsSheet = getSheet(CONFIG.sheetNames.animals);
-    var animalRows = animalsSheet.getDataRange().getValues().slice(1)
-      .filter(function(r) { return String(r[0] || '').trim(); });
+    var animalRows   = animalsSheet.getLastRow() > 1 ? animalsSheet.getDataRange().getValues().slice(1) : [];
     var totalProfiles = animalRows.length;
-
-    // Species breakdown (col 2 = AnimalType)
     var speciesBreakdown = { Dog: 0, Cat: 0, Cow: 0, Bird: 0, Other: 0 };
     animalRows.forEach(function(r) {
-      var type = String(r[2] || '').trim();
-      if (speciesBreakdown.hasOwnProperty(type)) {
-        speciesBreakdown[type]++;
-      } else {
-        speciesBreakdown.Other++;
+      var sp = String(r[2] || '').trim();
+      if (speciesBreakdown.hasOwnProperty(sp)) {
+        speciesBreakdown[sp]++;
+      } else if (sp) {
+        speciesBreakdown['Other']++;
       }
     });
 
-    // 2. Events across all event sheets
-    var eventSheetNames = getAllEventSheetNames();
+    // 2. Events across all Event sheets
+    var eventSheets = getAllEventSheetNames();
     var totalEvents = 0;
     var vaccinated = 0;
     var sterilised = 0;
     var communityReports = 0;
     var recentEventRows = [];
 
-    eventSheetNames.forEach(function(sheetName) {
-      var sheet = spreadsheet.getSheetByName(sheetName);
+    eventSheets.forEach(function(sheetName) {
+      var sheet = ss.getSheetByName(sheetName);
       if (!sheet || sheet.getLastRow() < 2) return;
-      sheet.getDataRange().getValues().slice(1).forEach(function(r) {
-        if (!String(r[0] || '').trim()) return;
-        totalEvents++;
-        var evType = String(r[17] || '').trim().toLowerCase();
-        var src    = String(r[25] || '').trim().toLowerCase();
-        if (evType.indexOf('vaccination') !== -1 || evType.indexOf('preventive') !== -1) vaccinated++;
-        if (evType.indexOf('steriliz') !== -1 || evType.indexOf('sterilisa') !== -1) sterilised++;
+      var rows = sheet.getDataRange().getValues().slice(1);
+      totalEvents += rows.length;
+      rows.forEach(function(r) {
+        var evtType = String(r[17] || '').trim().toLowerCase();
+        if (evtType.indexOf('vaccin') !== -1) vaccinated++;
+        if (evtType.indexOf('steril') !== -1) sterilised++;
+        var src = String(r[25] || '').trim().toLowerCase();
         if (src.indexOf('community') !== -1) communityReports++;
+
+        var tsRaw = r[28] || r[1];
+        var tsStr = tsRaw instanceof Date ? tsRaw.toISOString() : (tsRaw ? String(tsRaw) : '');
+        var dRaw  = r[20];
+        var dStr  = dRaw instanceof Date ? dRaw.toISOString().slice(0, 10) : (dRaw ? String(dRaw) : '');
+
         recentEventRows.push({
           eventId:             String(r[0]  || '').replace(/^'/, '').trim(),
-          carProfileId:        String(r[1]  || '').replace(/^'/, '').trim(),
-          dateOfEvent:         clientValue(r[20]),
-          timestamp:           clientValue(r[28]),
-          animalType:          String(r[3]  || '').trim(),
-          animalName:          String(r[5]  || '').trim(),
+          timestamp:           tsStr,
+          dateOfEvent:         dStr,
+          carProfileId:        String(r[1]  || r[2] || '').replace(/^'/, '').trim(),
+          animalName:          String(r[5]  || r[3] || '').trim(),
+          animalType:          String(r[3]  || r[4] || '').trim(),
           area:                String(r[6]  || '').trim(),
           eventType:           String(r[17] || '').trim(),
           outcomeCurrentStatus:String(r[23] || '').trim(),
@@ -793,7 +798,7 @@ function apiGetDashboardStats() {
 
     // 3. Healthy / Under Treatment from BaselineStatus
     var baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
-    var baselineRows  = baselineSheet.getDataRange().getValues().slice(1);
+    var baselineRows  = baselineSheet.getLastRow() > 1 ? baselineSheet.getDataRange().getValues().slice(1) : [];
     var healthy        = 0;
     var underTreatment = 0;
     var latestBaseline = {};
@@ -810,7 +815,7 @@ function apiGetDashboardStats() {
 
     // 4. Review Queue — pending UncertainMatches
     var holdSheet  = getSheet(CONFIG.sheetNames.uncertainMatches);
-    var holdRows   = holdSheet.getDataRange().getValues().slice(1);
+    var holdRows   = holdSheet.getLastRow() > 1 ? holdSheet.getDataRange().getValues().slice(1) : [];
     var reviewQueue = holdRows.filter(function(r) {
       return String(r[6] || '').trim() === 'Pending Review';
     }).length;
@@ -1244,6 +1249,47 @@ function apiRejectRecord(eventId, reason) {
 
   } catch (err) {
     Logger.log('Error in apiRejectRecord: ' + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * W3.6 — Admin: Get Audit Corrections log
+ * Returns rows from AuditCorrections sheet sorted newest first.
+ *
+ * @return {Object} { success: boolean, corrections: [...] }
+ */
+function apiGetAuditCorrections() {
+  try {
+    var sheet = getSheet(CONFIG.sheetNames.auditCorrections);
+    var data = sheet.getDataRange().getValues().slice(1);
+    var corrections = [];
+
+    data.forEach(function(r) {
+      if (!String(r[0] || '').trim()) return;
+      corrections.push({
+        correctionId:     String(r[0] || '').replace(/^'/, '').trim(),
+        targetTable:      String(r[1] || '').trim(),
+        targetRecordId:   String(r[2] || '').replace(/^'/, '').trim(),
+        carId:            String(r[3] || '').replace(/^'/, '').trim(),
+        fieldName:        String(r[4] || '').trim(),
+        oldValue:         clientValue(r[5]),
+        newValue:         clientValue(r[6]),
+        correctionReason: String(r[7] || '').trim(),
+        modifiedBy:       String(r[8] || '').trim(),
+        timestamp:        clientValue(r[9])
+      });
+    });
+
+    corrections.sort(function(a, b) {
+      var ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      var tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return tb - ta;
+    });
+
+    return { success: true, corrections: corrections };
+  } catch (err) {
+    Logger.log('Error in apiGetAuditCorrections: ' + err.toString());
     return { success: false, error: err.toString() };
   }
 }

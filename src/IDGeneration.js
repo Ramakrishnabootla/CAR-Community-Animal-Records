@@ -97,3 +97,12 @@ function generateHoldID() {
 function generateCorrectionID() {
   return 'COR-' + generateRandomString(5);
 }
+
+/**
+ * Generate Event ID in format: EVT-XXXXXXXX
+ * Matches the format used by apiSaveEvent() in Event.js
+ * @return {string} Unique Event ID
+ */
+function generateEventID() {
+  return 'EVT-' + generateRandomString(8);
+}

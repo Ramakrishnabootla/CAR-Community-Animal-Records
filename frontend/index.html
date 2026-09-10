@@ -829,13 +829,65 @@
     </section>
   </div>
 
-  <!-- Page: Admin Hold Queue -->
+  <!-- Page: Admin Verification & Queue (W3.6) -->
   <div id="page-admin" class="page">
     <section class="section-create">
-      <div class="container">
-        <h2>Admin Hold Queue & Verification</h2>
-        <p class="create-subtitle">Review side-by-side potential matches submitted by contributors.</p>
-        <div id="adminHoldList" style="margin-top:20px;"></div>
+      <div class="container" style="max-width:1100px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+          <div>
+            <h2>🛡️ Admin Management & Verification Portal</h2>
+            <p class="create-subtitle" style="margin:0;">Review pending records, uncertain matches, and view audit history.</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button type="button" class="btn-secondary" style="font-size:13px;" onclick="triggerSeedDemoData()">🌱 Seed Demo Dataset</button>
+            <button class="btn-refresh" onclick="refreshAdminQueue()">↻ Refresh All</button>
+          </div>
+        </div>
+
+        <!-- Admin Tabs -->
+        <div class="admin-tabs">
+          <button type="button" class="admin-tab-btn active" id="tabBtnPending" onclick="switchAdminTab('pending')">
+            📋 Pending Records Review <span class="admin-tab-badge" id="badgePendingCount">0</span>
+          </button>
+          <button type="button" class="admin-tab-btn" id="tabBtnHolds" onclick="switchAdminTab('holds')">
+            ⚠️ Uncertain Matches (Holds) <span class="admin-tab-badge" id="badgeHoldsCount">0</span>
+          </button>
+          <button type="button" class="admin-tab-btn" id="tabBtnAudit" onclick="switchAdminTab('audit')">
+            📜 Audit Corrections Log
+          </button>
+        </div>
+
+        <!-- Tab 1: Pending Records Pane -->
+        <div id="tabPanePending" class="admin-tab-pane">
+          <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <h3 style="font-size:18px; color:var(--text-dark); margin:0;">Unverified Events & Profiles</h3>
+            <span class="info-text">Review submissions and mark as Verified, Rejected, or Correct</span>
+          </div>
+          <div id="adminPendingList">
+            <p class="dash-loading">Loading pending records...</p>
+          </div>
+        </div>
+
+        <!-- Tab 2: Uncertain Matches (Holds) Pane -->
+        <div id="tabPaneHolds" class="admin-tab-pane" style="display:none;">
+          <div style="margin-bottom:16px;">
+            <h3 style="font-size:18px; color:var(--text-dark); margin:0 0 4px 0;">Search-Before-Create Hold Queue</h3>
+            <p class="info-text" style="margin:0;">Compare contributor submissions side-by-side with existing profiles to detect duplicate animals.</p>
+          </div>
+          <div id="adminHoldList"></div>
+        </div>
+
+        <!-- Tab 3: Audit Corrections Log Pane -->
+        <div id="tabPaneAudit" class="admin-tab-pane" style="display:none;">
+          <div style="margin-bottom:16px;">
+            <h3 style="font-size:18px; color:var(--text-dark); margin:0 0 4px 0;">Audit Trail & Correction Records</h3>
+            <p class="info-text" style="margin:0;">Immutable log of all changes, approvals, rejections, and profile modifications.</p>
+          </div>
+          <div id="adminAuditList">
+            <p class="dash-loading">Loading audit log...</p>
+          </div>
+        </div>
+
       </div>
     </section>
   </div>

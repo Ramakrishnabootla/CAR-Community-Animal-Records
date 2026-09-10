@@ -996,4 +996,152 @@
     .summary-top-row { flex-direction: column; }
     .summary-photo-frame { width: 100%; height: 200px; }
   }
+
+  /* ── Admin Tabs & Portal (W3.6) ───────────────────────────────────────── */
+  .admin-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .admin-tab-btn {
+    background: none;
+    border: none;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-light);
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+  }
+  .admin-tab-btn:hover {
+    color: var(--primary-color);
+  }
+  .admin-tab-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+  }
+  .admin-tab-badge {
+    background: var(--primary-light);
+    color: var(--primary-color);
+    font-size: 12px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 12px;
+  }
+  .admin-tab-btn.active .admin-tab-badge {
+    background: var(--primary-color);
+    color: #ffffff;
+  }
+  .admin-tab-pane {
+    animation: fadeIn 0.2s ease;
+  }
+
+  /* Admin Records Card */
+  .admin-record-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .admin-record-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .admin-actions-bar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f1f5f9;
+  }
+  .btn-admin-approve {
+    background: #137333;
+    color: #ffffff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s;
+  }
+  .btn-admin-approve:hover { background: #0d5424; }
+  .btn-admin-reject {
+    background: #fce8e6;
+    color: #c5221f;
+    border: 1px solid #fad2cf;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn-admin-reject:hover { background: #f8b4af; }
+
+  /* Audit table */
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #ffffff;
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    font-size: 13px;
+  }
+  .audit-table th {
+    background: #f8fafc;
+    color: var(--text-light);
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+  }
+  .audit-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-dark);
+    vertical-align: top;
+  }
+  .audit-table tr:hover { background: var(--bg-light); }
+  .audit-diff-old {
+    color: #c5221f;
+    background: #fce8e6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .audit-diff-new {
+    color: #137333;
+    background: #e6f4ea;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 700;
+  }
 </style>
