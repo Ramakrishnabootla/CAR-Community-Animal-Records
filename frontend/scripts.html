@@ -2313,7 +2313,16 @@
     const subBase = submitted.baselineStatus || {};
     const subContrib = submitted.contributor || {};
     const subMedia = submitted.media || [];
-    const subPhotoUrl = subMedia.length > 0 && subMedia[0].base64Data ? subMedia[0].base64Data : '';
+    const subPhotoUrl = hold.submittedPhotoUrl ||
+      submitted.submittedPhotoUrl ||
+      submitted.photoUrl ||
+      submitted.profileImageUrl ||
+      (subMedia.length > 0 && subMedia[0].base64Data ? subMedia[0].base64Data : '') ||
+      (subMedia.length > 0 && subMedia[0].driveFileURL ? getDirectDriveImageUrl(subMedia[0].driveFileURL) : '') ||
+      (subMedia.length > 0 && subMedia[0].driveFileId ? getDirectDriveImageUrl(subMedia[0].driveFileId) : '') ||
+      (subMedia.length > 0 && subMedia[0].url ? getDirectDriveImageUrl(subMedia[0].url) : '') ||
+      (subMedia.length > 0 && subMedia[0].photoUrl ? getDirectDriveImageUrl(subMedia[0].photoUrl) : '') ||
+      (subMedia.length > 0 && typeof subMedia[0] === 'string' ? getDirectDriveImageUrl(subMedia[0]) : '');
 
     const matched = hold.matchedProfile || {};
     const mAnimal = matched.animal || {};
@@ -2467,28 +2476,6 @@
   window.openProfileFromGallery = openProfileFromGallery;
   window.toggleFullHistory = toggleFullHistory;
   window.goBackFromProfile = goBackFromProfile;
-  function triggerSeedDemoData() {
-    if (!confirm('This will seed realistic demonstration records for all 4 species (Dogs, Cats, Cows, Birds), longitudinal care histories, duplicate review holds, and audit entries.\n\nProceed?')) return;
-    showLoading(true);
-    google.script.run
-      .withSuccessHandler(function(res) {
-        showLoading(false);
-        if (res && res.success) {
-          alert('✅ ' + (res.message || 'Demo data seeded successfully!') + `\nCreated ${res.profilesCount} profiles, ${res.eventsCount} events.`);
-          refreshAdminQueue();
-          if (typeof loadDashboard === 'function') loadDashboard();
-          if (typeof loadGallery === 'function') loadGallery();
-        } else {
-          alert('Failed to seed demo data: ' + ((res && res.error) || 'Unknown error'));
-        }
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Server error while seeding demo data: ' + err.message);
-      })
-      .apiSeedDemoData();
-  }
-
   function fallbackCopy(text) {
     const ta = document.createElement('textarea');
     ta.value = text;
@@ -2533,7 +2520,6 @@
     }
   }
 
-  window.triggerSeedDemoData = triggerSeedDemoData;
   window.copyToClipboard = copyToClipboard;
   window.resetCreateForm = resetCreateForm;
   window.resetEventForm = resetEventForm;
