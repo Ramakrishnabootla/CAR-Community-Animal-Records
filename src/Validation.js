@@ -12,20 +12,25 @@ function validateProfileData(data) {
   const errors = [];
 
   // Validate Contributor
-  const contributorErrors = validateContributor(data.contributor);
+  const contributorErrors = validateContributor(data.contributor || {});
   errors.push(...contributorErrors);
 
   // Validate Animal
-  const animalErrors = validateAnimal(data.animal);
+  const animalErrors = validateAnimal(data.animal || {});
   errors.push(...animalErrors);
 
   // Validate Location
-  const locationErrors = validateLocation(data.location);
+  const locationErrors = validateLocation(data.location || {});
   errors.push(...locationErrors);
 
-  if (!data.baselineStatus.healthStatus || data.baselineStatus.healthStatus.trim().length === 0) errors.push('Current health condition is required');
-  if (!data.baselineStatus.behavior || data.baselineStatus.behavior.trim().length === 0) errors.push('Behaviour is required');
-  if (!data.baselineStatus.identificationMarks || data.baselineStatus.identificationMarks.trim().length === 0) errors.push('Identification marks are required');
+  // BUG-04 FIX: Guard against missing baselineStatus block
+  if (!data.baselineStatus) {
+    errors.push('Baseline status block is missing');
+  } else {
+    if (!data.baselineStatus.healthStatus || data.baselineStatus.healthStatus.trim().length === 0) errors.push('Current health condition is required');
+    if (!data.baselineStatus.behavior || data.baselineStatus.behavior.trim().length === 0) errors.push('Behaviour is required');
+    if (!data.baselineStatus.identificationMarks || data.baselineStatus.identificationMarks.trim().length === 0) errors.push('Identification marks are required');
+  }
 
   return {
     valid: errors.length === 0,
@@ -72,9 +77,9 @@ function validateAnimal(animal) {
   const errors = [];
 
   // Animal Type (required)
-  const validTypes = ['Dog', 'Cat', 'Bird', 'Cattle', 'Other'];
+  const validTypes = ['Dog', 'Cat', 'Bird', 'Cow', 'Cattle', 'Other'];
   if (!animal.animalType || !validTypes.includes(animal.animalType)) {
-    errors.push('Animal type is required (Dog, Cat, Bird, Cattle, or Other)');
+    errors.push('Animal type is required (Dog, Cat, Bird, Cow, Cattle, or Other)');
   }
 
   if (!animal.sex || animal.sex.trim().length === 0) errors.push('Sex is required');
@@ -95,6 +100,7 @@ function validateLocation(location) {
 
   if (!location.area || location.area.trim().length === 0) errors.push('Area/Locality is required');
   if (!location.seenRegularly || location.seenRegularly.trim().length === 0) errors.push('Seen regularly answer is required');
+  if (!location.gpsCoordinates || location.gpsCoordinates.trim().length === 0) errors.push('GPS Location coordinates are required');
 
   return errors;
 }

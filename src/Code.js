@@ -12,7 +12,9 @@ const CONFIG = {
     locations: 'Locations',
     baselineStatus: 'BaselineStatus',
     media: 'Media',
-    events: 'Events'
+    events: 'Events',
+    uncertainMatches: 'UncertainMatches',
+    auditCorrections: 'AuditCorrections'
   },
   driveFolderName: 'CAR Media'
 };
@@ -21,9 +23,25 @@ const CONFIG = {
  * Serves the HTML interface
  */
 function doGet(e) {
-  return HtmlService.createTemplateFromFile('frontend/index')
+  const candidates = ['frontend/index', 'frontend\\index', 'index'];
+  let template = null;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      template = HtmlService.createTemplateFromFile(candidates[i]);
+      if (template) break;
+    } catch (err) {}
+  }
+  if (!template) {
+    try {
+      template = HtmlService.createHtmlOutputFromFile('index');
+    } catch (err2) {
+      return HtmlService.createHtmlOutput('<h3>Error: Could not load index template</h3>');
+    }
+  }
+  return template
       .evaluate()
       .setTitle('CAR - Community Animal Records')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
@@ -31,7 +49,23 @@ function doGet(e) {
  * Include other HTML files (for styles and scripts)
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  const cleanName = String(filename || '').replace(/\.html$/, '').trim();
+  const baseName = cleanName.split(/[\/\\]/).pop();
+  const variations = [
+    cleanName,
+    cleanName.replace(/\//g, '\\'),
+    cleanName.replace(/\\/g, '/'),
+    baseName,
+    'frontend/' + baseName,
+    'frontend\\' + baseName
+  ];
+  for (let i = 0; i < variations.length; i++) {
+    try {
+      return HtmlService.createHtmlOutputFromFile(variations[i]).getContent();
+    } catch (e) {}
+  }
+  Logger.log('Could not include file: ' + filename);
+  return '<!-- Include failed: ' + filename + ' -->';
 }
 
 /**
@@ -110,6 +144,20 @@ function initializeSheet(sheet, sheetName) {
   }
 }
 
+function appendRecordBySchema(sheet, sheetName, record) {
+  const headers = getSchemaHeaders(sheetName);
+  const currentHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length))
+    .getDisplayValues()[0].slice(0, headers.length).map(value => String(value).trim());
+  if (currentHeaders.join('|') !== headers.join('|') || sheet.getLastColumn() !== headers.length) {
+    migrateSheetToSchema(sheet, sheetName);
+  }
+  const values = headers.map(header => {
+    const value = record[normalizeHeader(header)];
+    return value === null || value === undefined ? '' : value;
+  });
+  sheet.appendRow(values);
+}
+
 function getSchemaHeaders(sheetName) {
   if (isEventSheet(sheetName)) {
     return getEventSchemaHeaders();
@@ -125,28 +173,59 @@ function getSchemaHeaders(sheetName) {
         'LocationID', 'Timestamp'];
     case CONFIG.sheetNames.locations:
       return ['LocationID', 'UsualLocationType', 'State', 'City', 'Area', 'Landmark',
-        'GPSCoordinates', 'SeenRegularly', 'Timestamp'];
+        'GPSCoordinates', 'GPSLatitude', 'GPSLongitude', 'GPSCapturedMethod', 'SeenRegularly', 'Timestamp'];
     case CONFIG.sheetNames.baselineStatus:
       return ['BaselineID', 'CARProfileID', 'HealthStatus', 'VaccinationStatus',
         'SterilisationStatus', 'Behavior', 'ABCStatus', 'ABCOutcome', 'IdentificationMarks',
         'IdentificationOtherDetails', 'AdditionalDetails', 'Timestamp'];
     case CONFIG.sheetNames.media:
-      return ['MediaID', 'CARProfileID', 'MediaType', 'DriveFileID', 'DriveFileURL',
-        'FileName', 'UploadTimestamp'];
+      return ['MediaID', 'CARProfileID', 'EventID', 'AnimalType', 'MediaType', 'DriveFileID', 'DriveFileURL',
+        'FileName', 'Visibility', 'Source', 'UploadTimestamp'];
+    case CONFIG.sheetNames.uncertainMatches:
+      return ['HoldID', 'MatchedCARProfileID', 'MatchScore', 'MatchingFieldsJSON', 'SubmittedDataJSON', 'ContributorID', 'Status', 'CreatedAt', 'AdminNotes', 'ResolvedBy', 'ResolvedAt'];
+    case CONFIG.sheetNames.auditCorrections:
+      return ['CorrectionID', 'TargetTable', 'TargetRecordID', 'CAR-ID', 'FieldName', 'OldValue', 'NewValue', 'CorrectionReason', 'ModifiedBy', 'Timestamp'];
     case CONFIG.sheetNames.events:
       return getEventSchemaHeaders();
     default:
       return [];
   }
 }
-
 function getEventSchemaHeaders() {
-  return ['EventID', 'CARProfileID', 'DateReported', 'AnimalType', 'AnimalOtherDetails',
+  return ['EventID', 'CAR-ID', 'DateReported', 'AnimalType', 'AnimalOtherDetails',
     'AnimalName', 'Area', 'Landmark', 'GPSLocation', 'HealthCondition',
     'HealthOtherDetails', 'Behaviour', 'BehaviourOtherDetails', 'Vaccinated',
     'Sterilised', 'IdentificationMarks', 'IdentificationOtherDetails', 'EventType',
     'EventCategory', 'EventOtherDetails', 'DateOfEvent', 'OrganisationOrPerson',
-    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Timestamp'];
+    'EventDescription', 'OutcomeCurrentStatus', 'AdditionalDetails', 'Source', 'Verification', 'Visibility', 'Timestamp',
+    'DateReportedForm', 'AreaLocality', 'CurrentHealthConditionBeforeDeath', 'DeathDatetimeApproximate',
+    'SuspectedCauseOfDeath', 'CauseConfirmedByVeterinarian', 'FollowUpActionTaken', 'FurtherFollowUpRequired',
+    'TypeOfEvent', 'EventTypeOtherDetails', 'LastSeenDatetime', 'LastSeenLocation', 'IsAnimalStillMissing',
+    'ImmediateSupportNeeded', 'ContactPerson', 'ContactNumber', 'FoundDatetimeApproximate', 'FoundLocation',
+    'KnownInArea', 'CurrentStatus', 'CurrentStatusOtherDetails', 'FoundAbandonedDatetime', 'AbandonmentEvidence',
+    'CurrentlySafe', 'RelocatedFrom', 'RelocatedTo', 'ReasonForRelocation', 'RelocationReasonOtherDetails',
+    'OrganisationOrPersonResponsible', 'FurtherSupportNeeded', 'FurtherSupportOtherDetails',
+    'TypeOfCrueltyAbuse', 'CrueltyAbuseOtherDetails', 'AnimalCurrentlySafe', 'ImmediateAssistanceRequired',
+    'ImmediateAssistanceOtherDetails', 'IncidentReportedTo', 'IncidentReportedOtherDetails',
+    'ReturnReleaseType', 'ReturnReleaseTypeOther', 'DateOfReturnRelease', 'ReturnedReleasedBy',
+    'ReleaseReturnLocation', 'ReleaseReturnLocationOther', 'ConditionAtReturnRelease', 'ConditionAtReturnReleaseOther',
+    'BiteIncidentDatetime', 'WhoWasBitten', 'BiteSeverity', 'EventsBeforeBite', 'EventsBeforeBiteOtherDetails',
+    'FosterStartDate', 'FosterCaregiverName', 'FosterCaregiverContactNumber', 'FosterLocation',
+    'ExpectedDuration', 'ExpectedDurationOtherDetails', 'ReasonForFosterCare', 'ReasonForFosterCareOtherDetails',
+    'PickedUpBy', 'PickedUpByOtherDetails', 'ReasonForPickup', 'ReasonForPickupOtherDetails',
+    'AnimalTakenTo', 'AnimalTakenToOtherDetails', 'TypeOfConflict', 'TypeOfConflictOtherDetails',
+    'ReportedBy', 'ReportedByOtherDetails', 'ConflictResolved', 'FollowUpActionOtherDetails',
+    'VaccinationHealthCondition', 'VaccinationHealthConditionOther', 'VaccinationBehaviour',
+    'VaccinationBehaviourOther', 'VaccinationStatus', 'VaccinationSterilized',
+    'VaccinationIdentificationMarks', 'VaccinationIdentificationMarksOther', 'PreventiveCareType',
+    'PreventiveCareOtherDetails', 'PreventiveCareDate', 'PreventiveCareGivenBy', 'NextFollowUpDate',
+    'VaccineProductName', 'SterilizationDateReported', 'SterilizationHealthCondition',
+    'SterilizationBehaviour', 'SterilizationVaccinated', 'SterilizationStatus',
+    'SterilizationIdentificationMarks', 'SterilizationProcedureActions', 'SterilizationProcedureDate',
+    'SterilizationPerformedBy', 'SterilizationEarNotchApplied', 'SterilizationRecoveryStatus',
+    'SterilizationAdditionalDetails', 'MedicalTreatmentDate', 'MedicalTreatmentHealthCondition',
+    'MedicalTreatmentBehaviour', 'MedicalTreatmentReason', 'MedicalTreatmentGiven',
+    'MedicalTreatmentProvidedBy', 'MedicalTreatmentSupportNeeded', 'MedicalTreatmentAdditionalDetails'];
 }
 
 function isEventSheet(sheetName) {
@@ -172,8 +251,9 @@ function getAllEventSheetNames() {
 /**
  * Test function to verify setup
  */
-function getConfiguredEventTypes() {
-  return [
+function testSetup() {
+  const report = [];
+  const eventTypes = [
     'Vaccination or Preventive Care',
     'Medical Treatment',
     'Sterilization',
@@ -189,13 +269,13 @@ function getConfiguredEventTypes() {
     'Picked Up by Agencies / Government Bodies',
     'Community Conflict',
     'Death',
-    'Other Events Not Listed'
+    'Other Events Not Listed',
+    'Community Observation',
+    'Behaviour',
+    'Accident',
+    'Reunited',
+    'Adoption'
   ];
-}
-
-function testSetup() {
-  const report = [];
-  const eventTypes = getConfiguredEventTypes();
 
   Object.values(CONFIG.sheetNames).forEach(sheetName => {
     const sheet = getSheetForSetup(sheetName);
@@ -206,9 +286,6 @@ function testSetup() {
 
   eventTypes.forEach(eventType => {
     const sheetName = getEventSheetName(eventType);
-    if (!getSheetForSetup(sheetName)) {
-      return;
-    }
     const sheet = getSheetForSetup(sheetName);
     const result = migrateSheetToSchema(sheet, sheetName);
     report.push({ sheet: sheetName, rows: result.rows, columns: getSchemaHeaders(sheetName).length, migrated: result.migrated });
@@ -216,6 +293,10 @@ function testSetup() {
   });
 
   return { success: true, spreadsheet: getDatabaseInfo(), sheets: report };
+}
+
+function regenerateDatabaseHeaders() {
+  return testSetup();
 }
 
 function getSheetForSetup(sheetName) {
@@ -230,10 +311,11 @@ function getSheetForSetup(sheetName) {
 
 function migrateSheetToSchema(sheet, sheetName) {
   const newHeaders = getSchemaHeaders(sheetName);
-  const values = sheet.getDataRange().getDisplayValues();
+  const values = sheet.getDataRange().getValues();
   const oldHeaders = values.length ? values[0].map(value => String(value).trim()) : [];
   const oldHeaderIndexes = {};
   oldHeaders.forEach((header, index) => { oldHeaderIndexes[normalizeHeader(header)] = index; });
+  if (!oldHeaderIndexes.carid && oldHeaderIndexes.carprofileid) oldHeaderIndexes.carid = oldHeaderIndexes.carprofileid;
 
   const rows = values.slice(1).filter(row => row.some(value => value !== '' && value !== null));
   const migratedRows = rows.map(row => newHeaders.map((header, headerIndex) => {
@@ -254,12 +336,24 @@ function migrateSheetToSchema(sheet, sheetName) {
 
 function normalizePlainTextValue(value, header, sheetName) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return String(value);
+  // BUG-15 FIX: Date objects should never get the apostrophe prefix. Only convert to ISO string.
+  if (value instanceof Date) return value.toISOString();
+  // Only prepend apostrophe for numeric values that are ID/phone fields, not all numbers.
+  if (typeof value === 'number') {
+    const normalizedHeader = normalizeHeader(header);
+    if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
+      return "'" + String(value);
+    }
+    return String(value); // Return plain string for all other numbers (e.g. scores, counts)
+  }
   const text = String(value).trim();
   if (!text) return '';
   const normalizedHeader = normalizeHeader(header);
   if (sheetName === CONFIG.sheetNames.contributors && (normalizedHeader === 'mobile' || normalizedHeader === 'phone')) {
-    return text.replace(/\s+/g, '');
+    return "'" + text.replace(/\s+/g, '');
+  }
+  if (normalizedHeader.includes('carprofileid') || normalizedHeader.includes('phone') || normalizedHeader.includes('mobile')) {
+    return "'" + text;
   }
   return text;
 }
@@ -273,7 +367,11 @@ function findHeaderIndex(indexes, header) {
   const aliases = {
     behavior: ['behaviournote', 'behaviournotes', 'behaviornotes'],
     gpscoordinates: ['gpslocation', 'googlelocationpin'],
-    timestamp: ['uploaddate', 'uploadtimestamp']
+    gpslatitude: ['latitude'],
+    gpslongitude: ['longitude'],
+    gpscapturedmethod: ['source', 'manualentry'],
+    timestamp: ['uploaddate', 'uploadtimestamp'],
+    verification: ['verificationstatus']
   };
   if (indexes[normalized] !== undefined) return indexes[normalized];
   const possibleNames = aliases[normalized] || [];
@@ -293,32 +391,8 @@ function addMissingEntityIds(rows, headers, sheetName) {
     if (sheetName === CONFIG.sheetNames.locations) row[idIndex] = generateLocationID();
     if (sheetName === CONFIG.sheetNames.baselineStatus) row[idIndex] = generateBaselineID();
     if (sheetName === CONFIG.sheetNames.media) row[idIndex] = generateMediaID();
+    if (sheetName === CONFIG.sheetNames.uncertainMatches) row[idIndex] = generateHoldID();
+    if (sheetName === CONFIG.sheetNames.auditCorrections) row[idIndex] = generateCorrectionID();
     if (sheetName === CONFIG.sheetNames.events) row[idIndex] = 'EVT-' + generateRandomString(8);
   });
-}
-
-/**
- * Helper function to create a new Google Sheets database
- * Run this once with: clasp run-function createDatabase
- * Then copy the returned spreadsheet ID to CONFIG.spreadsheetId
- */
-function createDatabase() {
-  const ss = SpreadsheetApp.create('CAR Database');
-  const spreadsheetId = ss.getId();
-  const url = ss.getUrl();
-
-  Logger.log('CAR Database created successfully!');
-  Logger.log('Spreadsheet ID: ' + spreadsheetId);
-  Logger.log('URL: ' + url);
-  Logger.log('');
-  Logger.log('Next steps:');
-  Logger.log('1. Copy this spreadsheet ID: ' + spreadsheetId);
-  Logger.log('2. Update src/Code.js CONFIG.spreadsheetId with this ID');
-  Logger.log('3. Run: clasp push --force');
-  Logger.log('4. Run: clasp run-function testSetup');
-
-  return {
-    spreadsheetId: spreadsheetId,
-    url: url
-  };
 }

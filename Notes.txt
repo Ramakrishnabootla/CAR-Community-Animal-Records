@@ -2,9 +2,9 @@ clasp pull --allow-symlinks
 
 clasp list-deployments
 
-
+clasp status --allow-symlinks
 clasp push --allow-symlinks 
-clasp update-deployment AKfycbzlhxsR2K_HinLzkcWIFexb9m8bLNM1RkIyLkn1ZnMZb22BPUPd9TsbtcBaB2mR2xo
+clasp update-deployment AKfycbxUYBPLrMHrVVFbXk6og1BcnNasdKfI3SSwuYWnl2hwLMMMJoABvAnvQMlddW8QV85W
 
 Head Deployment link:-  https://script.google.com/macros/s/AKfycbyExId8iToQRdC3S8DIqLRlEKKRvYT0bwEbVxnkiCE/exec
 
