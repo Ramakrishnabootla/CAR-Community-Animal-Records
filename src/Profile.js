@@ -102,6 +102,7 @@ function apiSaveProfile(data) {
       identificationmarks: sanitizeString(data.baselineStatus.identificationMarks),
       identificationotherdetails: sanitizeString(data.baselineStatus.identificationOtherDetails),
       additionaldetails: sanitizeString(data.baselineStatus.additionalDetails),
+      lastvaccinated: sanitizeString(data.baselineStatus.lastVaccinated),
       timestamp: timestamp
     });
 

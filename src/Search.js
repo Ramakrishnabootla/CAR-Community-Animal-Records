@@ -10,8 +10,9 @@
  * @param {string} carProfileID - CAR ID to search
  * @return {Object} Profile data or null
  */
-function apiSearchProfile(carProfileID, includeDocuments) {
+function apiSearchProfile(carProfileID, includeDocuments, adminToken) {
   try {
+    if (includeDocuments === true) requireAdminAccess(adminToken);
     if (!carProfileID) {
       return { success: false, error: 'Empty Profile ID search' };
     }
@@ -71,7 +72,7 @@ function apiSearchProfile(carProfileID, includeDocuments) {
 
     // 4. Fetch Baseline Status
     const baselineRow = findRowByID(CONFIG.sheetNames.baselineStatus, 1, cleanId);
-    const baselineStatus = baselineRow ? {
+    let baselineStatus = baselineRow ? {
       baselineId: baselineRow[0],
       carProfileId: baselineRow[1],
       healthStatus: baselineRow[2],
@@ -83,15 +84,19 @@ function apiSearchProfile(carProfileID, includeDocuments) {
       identificationMarks: baselineRow[8],
       identificationOtherDetails: baselineRow[9],
       additionalDetails: baselineRow[10],
-      timestamp: clientValue(baselineRow[11])
+      lastVaccinated: baselineRow[11],
+      timestamp: clientValue(baselineRow[12])
     } : null;
+    baselineStatus = applyEventHealthToProfile(cleanId, baselineStatus);
 
     // 5. Fetch Media links
     const mediaRows = findAllRowsByID(CONFIG.sheetNames.media, 1, cleanId);
     const hasDocuments = mediaRows.length > 0;
     const profilePhoto = mediaRows.find(row => String(row[4] || '').toLowerCase() === 'photo');
     const profileImageUrl = profilePhoto
-      ? getAdminMediaPreviewUrl(profilePhoto[5], profilePhoto[6], profilePhoto[4])
+      ? (includeDocuments === true
+        ? getAdminMediaPreviewUrl(profilePhoto[5], profilePhoto[6], profilePhoto[4])
+        : getDirectDriveImageUrl(profilePhoto[5], profilePhoto[6]))
       : '';
     const media = includeDocuments === true ? mediaRows.map(row => ({
       mediaId: row[0],
@@ -131,8 +136,42 @@ function apiSearchProfile(carProfileID, includeDocuments) {
   }
 }
 
-function apiGetProfileEvents(carProfileID, includeDocuments) {
+function applyEventHealthToProfile(carProfileId, baselineStatus) {
+  if (!baselineStatus) return baselineStatus;
+  const derived = { ...baselineStatus };
+  let latestVaccinationDate = String(derived.lastVaccinated || '').trim();
+
+  findEventRowsByProfileId(carProfileId).forEach(row => {
+    const eventType = String(row[17] || '').toLowerCase();
+    const eventCategory = String(row[18] || '').toLowerCase();
+    const eventDate = String(row[20] || row[2] || '').trim();
+    const isVaccination = eventType.includes('vaccin') || eventType.includes('preventive') || eventCategory.includes('vaccin');
+    const isSterilization = eventType.includes('steril') || eventCategory.includes('steril');
+
+    if (isSterilization) derived.sterilisationStatus = 'Sterilised';
+    if (isVaccination) {
+      derived.vaccinationStatus = 'Vaccinated';
+      if (eventDate && eventDate.toLowerCase() !== 'unknown' &&
+          (!latestVaccinationDate || new Date(eventDate).getTime() >= new Date(latestVaccinationDate).getTime())) {
+        latestVaccinationDate = eventDate;
+      }
+    }
+  });
+
+  derived.lastVaccinated = latestVaccinationDate;
+  return derived;
+}
+
+function requireAdminAccess(adminToken) {
+  const token = String(adminToken || '').trim();
+  if (!token || CacheService.getScriptCache().get('car_admin_' + token) !== 'admin') {
+    throw new Error('Administrator access is required.');
+  }
+}
+
+function apiGetProfileEvents(carProfileID, includeDocuments, adminToken) {
   try {
+    if (includeDocuments === true) requireAdminAccess(adminToken);
     const cleanId = String(carProfileID || '').trim().replace(/^'/, '');
     if (!cleanId) return { success: false, events: [], error: 'CAR Profile ID is required' };
 
@@ -392,8 +431,9 @@ function apiSaveUncertainMatch(data) {
 /**
  * Fetch pending holds for Admin Dashboard
  */
-function apiGetPendingHolds() {
+function apiGetPendingHolds(adminToken) {
   try {
+    requireAdminAccess(adminToken);
     const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
     const rows = holdSheet.getDataRange().getValues().slice(1);
 
@@ -402,7 +442,7 @@ function apiGetPendingHolds() {
       let matchedProfile = null;
       if (matchedCarProfileId) {
         try {
-          const profileRes = apiSearchProfile(matchedCarProfileId, true);
+          const profileRes = apiSearchProfile(matchedCarProfileId, true, adminToken);
           if (profileRes && profileRes.success && profileRes.profile) {
             matchedProfile = profileRes.profile;
           }
@@ -471,8 +511,9 @@ function apiGetPendingHolds() {
 /**
  * Admin action: Resolve Hold (Approve as new profile or Reject/Merge)
  */
-function apiResolveHold(holdId, action, adminNotes) {
+function apiResolveHold(holdId, action, adminNotes, adminToken) {
   try {
+    requireAdminAccess(adminToken);
     const holdSheet = getSheet(CONFIG.sheetNames.uncertainMatches);
     const data = holdSheet.getDataRange().getValues();
     const notes = adminNotes || '';
@@ -1127,8 +1168,9 @@ function apiGetProfileSummary(carProfileId) {
  *
  * @return {Object} { success, pendingProfiles: [...], pendingEvents: [...] }
  */
-function apiGetPendingRecords() {
+function apiGetPendingRecords(adminToken) {
   try {
+    requireAdminAccess(adminToken);
     var animalsSheet  = getSheet(CONFIG.sheetNames.animals);
     var animalRows    = animalsSheet.getDataRange().getValues().slice(1);
     var baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
@@ -1227,8 +1269,9 @@ function apiGetPendingRecords() {
  * @param  {string} adminNotes
  * @return {Object} { success, eventId, newStatus }
  */
-function apiApproveRecord(eventId, adminNotes) {
+function apiApproveRecord(eventId, adminNotes, adminToken) {
   try {
+    requireAdminAccess(adminToken);
     var cleanEventId = String(eventId || '').replace(/^'/, '').trim();
     if (!cleanEventId) return { success: false, error: 'Event ID is required' };
 
@@ -1276,8 +1319,9 @@ function apiApproveRecord(eventId, adminNotes) {
  * @param  {string} reason
  * @return {Object} { success, eventId, newStatus }
  */
-function apiRejectRecord(eventId, reason) {
+function apiRejectRecord(eventId, reason, adminToken) {
   try {
+    requireAdminAccess(adminToken);
     var cleanEventId = String(eventId || '').replace(/^'/, '').trim();
     if (!cleanEventId) return { success: false, error: 'Event ID is required' };
 
@@ -1324,8 +1368,9 @@ function apiRejectRecord(eventId, reason) {
  *
  * @return {Object} { success: boolean, corrections: [...] }
  */
-function apiGetAuditCorrections() {
+function apiGetAuditCorrections(adminToken) {
   try {
+    requireAdminAccess(adminToken);
     var sheet = getSheet(CONFIG.sheetNames.auditCorrections);
     var data = sheet.getDataRange().getValues().slice(1);
     var corrections = [];

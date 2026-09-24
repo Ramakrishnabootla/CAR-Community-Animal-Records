@@ -6,7 +6,13 @@
   let isSubmitting = false;
   let cachedPendingHolds = [];
   let cachedGalleryProfiles = [];
-  let isAdmin = sessionStorage.getItem('carAdminSession') === 'true';
+  let adminToken = sessionStorage.getItem('carAdminSession') || '';
+  const isAdminToken = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+  if (!isAdminToken(adminToken)) {
+    adminToken = '';
+    sessionStorage.removeItem('carAdminSession');
+  }
+  let isAdmin = Boolean(adminToken);
   const additionalEventQuestionnaires = [
     ['Rescue', 'Rescue details, reason, current status, and organisation/person involved.'],
     ['Lost Animal', 'Last known location, date lost, identifying details, and contact or follow-up information.'],
@@ -287,8 +293,9 @@
       return `<div class="form-group${wrapperClass}" data-detail-field="${field[0]}" style="${conditional ? 'display:none;' : ''}"><label>${label}</label><select name="${name}" onchange="updateConditionalDetailFields()"><option value="">Choose</option>${field[3].map(option => `<option>${escapeHtml(option)}</option>`).join('')}</select></div>`;
     }
     if (type === 'checks') {
+      const inputType = field[0] === 'current_health_condition' ? 'radio' : 'checkbox';
       const exclusive = field[0] === 'further_support_needed' ? ' data-exclusive="No Further Support Needed"' : '';
-      return `<div class="form-group${wrapperClass}" data-detail-field="${field[0]}" style="${conditional ? 'display:none;' : ''}"><label>${label}</label><div class="checkbox-group">${field[3].map(option => `<label><input type="checkbox" name="${name}" value="${escapeHtml(option)}"${exclusive} onchange="handleExclusiveSupport(event); updateConditionalDetailFields();"> ${escapeHtml(option)}</label>`).join('')}</div></div>`;
+      return `<div class="form-group${wrapperClass}" data-detail-field="${field[0]}" style="${conditional ? 'display:none;' : ''}"><label>${label}</label><div class="checkbox-group">${field[3].map(option => `<label><input type="${inputType}" name="${name}" value="${escapeHtml(option)}"${exclusive} onchange="handleExclusiveSupport(event); updateConditionalDetailFields();"> ${escapeHtml(option)}</label>`).join('')}</div></div>`;
     }
     if (type === 'textarea') {
       return `<div class="form-group${wrapperClass}" data-detail-field="${field[0]}" style="${conditional ? 'display:none;' : ''}"><label>${label}</label><textarea name="${name}" rows="3"></textarea></div>`;
@@ -366,6 +373,7 @@
 
   function logoutAdmin() {
     isAdmin = false;
+    adminToken = '';
     sessionStorage.removeItem('carAdminSession');
     updateAdminNavigation();
     showPage('home');
@@ -382,7 +390,8 @@
         return;
       }
       isAdmin = true;
-      sessionStorage.setItem('carAdminSession', 'true');
+      adminToken = result.token || '';
+      sessionStorage.setItem('carAdminSession', adminToken);
       updateAdminNavigation();
       event.target.reset();
       showPage('admin');
@@ -1147,8 +1156,7 @@
       const givenBy = getVal('[name="preventiveCareGivenBy"]');
       const requiredGroups = [
         ['vaccinationHealthCondition', 'Current Health Condition'],
-        ['vaccinationBehaviour', 'Behaviour'],
-        ['vaccinationIdentificationMarks', 'Identification Marks']
+        ['vaccinationBehaviour', 'Behaviour']
       ];
       const missingGroup = requiredGroups.find(([name]) => !getChecked(name));
       if (missingGroup) {
@@ -1177,20 +1185,12 @@
         healthOtherDetails: getVal('[name="vaccinationHealthConditionOther"]'),
         behaviour: getChecked('vaccinationBehaviour'),
         behaviourOtherDetails: getVal('[name="vaccinationBehaviourOther"]'),
-        vaccinated: getVal('[name="vaccinationStatus"]'),
-        sterilised: getVal('[name="vaccinationSterilized"]'),
-        identificationMarks: getChecked('vaccinationIdentificationMarks'),
-        identificationOtherDetails: getVal('[name="vaccinationIdentificationMarksOther"]'),
         additionalDetails: getVal('[name="vaccineProductName"]'),
         formFields: {
           vaccinationhealthcondition: getChecked('vaccinationHealthCondition'),
           vaccinationhealthconditionother: getVal('[name="vaccinationHealthConditionOther"]'),
           vaccinationbehaviour: getChecked('vaccinationBehaviour'),
           vaccinationbehaviourother: getVal('[name="vaccinationBehaviourOther"]'),
-          vaccinationstatus: getVal('[name="vaccinationStatus"]'),
-          vaccinationsterilized: getVal('[name="vaccinationSterilized"]'),
-          vaccinationidentificationmarks: getChecked('vaccinationIdentificationMarks'),
-          vaccinationidentificationmarksother: getVal('[name="vaccinationIdentificationMarksOther"]'),
           preventivecaretype: pType,
           preventivecareotherdetails: getVal('[name="preventiveCareOtherDetails"]'),
           preventivecaredate: getVal('[name="preventiveCareDate"]'),
@@ -1234,9 +1234,6 @@
         dateReported: getVal('[name="sterilizationDateReported"]', new Date().toISOString().split('T')[0]),
         healthCondition: getChecked('sterilizationHealthCondition'),
         behaviour: getChecked('sterilizationBehaviour'),
-        vaccinated: getVal('[name="sterilizationVaccinated"]'),
-        sterilised: getVal('[name="sterilizationStatus"]'),
-        identificationMarks: getChecked('sterilizationIdentificationMarks'),
         eventCategory: getChecked('sterilizationProcedureActions') || 'Sterilization Surgery',
         dateOfEvent: getVal('[name="sterilizationProcedureDate"]', getVal('[name="sterilizationDateReported"]')),
         organisationOrPerson: getVal('[name="sterilizationPerformedBy"]'),
@@ -1246,9 +1243,6 @@
           sterilizationdatereported: getVal('[name="sterilizationDateReported"]'),
           sterilizationhealthcondition: getChecked('sterilizationHealthCondition'),
           sterilizationbehaviour: getChecked('sterilizationBehaviour'),
-          sterilizationvaccinated: getVal('[name="sterilizationVaccinated"]'),
-          sterilizationstatus: getVal('[name="sterilizationStatus"]'),
-          sterilizationidentificationmarks: getChecked('sterilizationIdentificationMarks'),
           sterilizationprocedureactions: getChecked('sterilizationProcedureActions'),
           sterilizationproceduredate: getVal('[name="sterilizationProcedureDate"]'),
           sterilizationperformedby: getVal('[name="sterilizationPerformedBy"]'),
@@ -1484,7 +1478,7 @@
         showLoading(false);
         alert('Search Error: ' + err.message);
       })
-      .apiSearchProfile(carProfileId, isAdmin);
+      .apiSearchProfile(carProfileId, isAdmin, adminToken);
   }
 
   function escapeHtml(value) {
@@ -1536,7 +1530,7 @@
   }
 
   const profileEditFields = ['animalType', 'nativeDogType', 'breedType', 'breedOtherDetails', 'animalName', 'sex', 'age', 'caregiverAnswer', 'caregiverType', 'caregiverOtherDetails', 'careProvided', 'careOtherDetails', 'area', 'usualLocationType', 'state', 'city', 'seenRegularly', 'landmark', 'gpsLocation', 'gpsLatitude', 'gpsLongitude', 'gpsCapturedMethod', 'healthStatus', 'vaccinationStatus', 'behavior', 'abcStatus', 'abcOutcome', 'identificationMarks', 'identificationOtherDetails', 'additionalDetails', 'sterilisationStatus'];
-  const eventEditFields = ['preventiveCareType', 'preventiveCareOtherDetails', 'preventiveCareDate', 'preventiveCareGivenBy', 'nextFollowUpDate', 'vaccineProductName', 'vaccinationHealthCondition', 'vaccinationHealthConditionOther', 'vaccinationBehaviour', 'vaccinationBehaviourOther', 'vaccinationStatus', 'vaccinationSterilized', 'vaccinationIdentificationMarks', 'vaccinationIdentificationMarksOther', 'medicalTreatmentDate', 'medicalTreatmentHealthCondition', 'medicalTreatmentBehaviour', 'medicalTreatmentReason', 'medicalTreatmentGiven', 'medicalTreatmentProvidedBy', 'medicalTreatmentSupportNeeded', 'medicalTreatmentAdditionalDetails', 'sterilizationDateReported', 'sterilizationHealthCondition', 'sterilizationBehaviour', 'sterilizationVaccinated', 'sterilizationStatus', 'sterilizationIdentificationMarks', 'sterilizationProcedureActions', 'sterilizationProcedureDate', 'sterilizationPerformedBy', 'sterilizationEarNotchApplied', 'sterilizationRecoveryStatus', 'sterilizationAdditionalDetails'];
+  const eventEditFields = ['preventiveCareType', 'preventiveCareOtherDetails', 'preventiveCareDate', 'preventiveCareGivenBy', 'nextFollowUpDate', 'vaccineProductName', 'vaccinationHealthCondition', 'vaccinationHealthConditionOther', 'vaccinationBehaviour', 'vaccinationBehaviourOther', 'medicalTreatmentDate', 'medicalTreatmentHealthCondition', 'medicalTreatmentBehaviour', 'medicalTreatmentReason', 'medicalTreatmentGiven', 'medicalTreatmentProvidedBy', 'medicalTreatmentSupportNeeded', 'medicalTreatmentAdditionalDetails', 'sterilizationDateReported', 'sterilizationHealthCondition', 'sterilizationBehaviour', 'sterilizationProcedureActions', 'sterilizationProcedureDate', 'sterilizationPerformedBy', 'sterilizationEarNotchApplied', 'sterilizationRecoveryStatus', 'sterilizationAdditionalDetails'];
 
   const activeEditSnapshots = { animal: {}, event: {} };
 
@@ -1608,15 +1602,12 @@
       nextFollowUpDate: formFields.nextfollowupdate, vaccineProductName: formFields.vaccineproductname || eventRecord.additionalDetails,
       vaccinationHealthCondition: formFields.vaccinationhealthcondition || eventRecord.healthCondition, vaccinationHealthConditionOther: formFields.vaccinationhealthconditionother,
       vaccinationBehaviour: formFields.vaccinationbehaviour || eventRecord.behaviour, vaccinationBehaviourOther: formFields.vaccinationbehaviourother,
-      vaccinationStatus: formFields.vaccinationstatus || eventRecord.vaccinated, vaccinationSterilized: formFields.vaccinationsterilized || eventRecord.sterilised,
-      vaccinationIdentificationMarks: formFields.vaccinationidentificationmarks || eventRecord.identificationMarks, vaccinationIdentificationMarksOther: formFields.vaccinationidentificationmarksother,
       medicalTreatmentDate: formFields.medicaltreatmentdate || eventRecord.dateOfEvent, medicalTreatmentHealthCondition: formFields.medicaltreatmenthealthcondition || eventRecord.healthCondition,
       medicalTreatmentBehaviour: formFields.medicaltreatmentbehaviour || eventRecord.behaviour, medicalTreatmentReason: formFields.medicaltreatmentreason || eventRecord.eventCategory,
       medicalTreatmentGiven: formFields.medicaltreatmentgiven || eventRecord.eventDescription, medicalTreatmentProvidedBy: formFields.medicaltreatmentprovidedby || eventRecord.organisationOrPerson,
       medicalTreatmentSupportNeeded: formFields.medicaltreatmentsupportneeded, medicalTreatmentAdditionalDetails: formFields.medicaltreatmentadditionaldetails || eventRecord.additionalDetails,
       sterilizationDateReported: formFields.sterilizationdatereported || eventRecord.dateReported, sterilizationHealthCondition: formFields.sterilizationhealthcondition || eventRecord.healthCondition,
-      sterilizationBehaviour: formFields.sterilizationbehaviour || eventRecord.behaviour, sterilizationVaccinated: formFields.sterilizationvaccinated || eventRecord.vaccinated,
-      sterilizationStatus: formFields.sterilizationstatus || eventRecord.sterilised, sterilizationIdentificationMarks: formFields.sterilizationidentificationmarks || eventRecord.identificationMarks,
+      sterilizationBehaviour: formFields.sterilizationbehaviour || eventRecord.behaviour,
       sterilizationProcedureActions: formFields.sterilizationprocedureactions || eventRecord.eventCategory, sterilizationProcedureDate: formFields.sterilizationproceduredate || eventRecord.dateOfEvent,
       sterilizationPerformedBy: formFields.sterilizationperformedby || eventRecord.organisationOrPerson, sterilizationEarNotchApplied: formFields.sterilizationearnotchapplied,
       sterilizationRecoveryStatus: formFields.sterilizationrecoverystatus || eventRecord.outcomeCurrentStatus, sterilizationAdditionalDetails: formFields.sterilizationadditionaldetails || eventRecord.additionalDetails
@@ -1672,21 +1663,19 @@
           if (submitButton) submitButton.disabled = false;
           if (message) { message.className = 'form-message error'; message.textContent = 'Server Error: ' + error.message; }
         })
-        .apiLogCorrection(targetTable, targetRecordId, canonicalEditField(edit.fieldName), edit.oldValue, edit.newValue, formData.get('reason'), '', carProfileId);
+        .apiLogCorrection(targetTable, targetRecordId, canonicalEditField(edit.fieldName), edit.oldValue, edit.newValue, formData.get('reason'), '', carProfileId, adminToken);
     };
     saveNextEdit();
   }
 
   function canonicalEditField(fieldName) {
     const eventFieldMap = {
-      vaccinationHealthCondition: 'HealthCondition', vaccinationBehaviour: 'Behaviour', vaccinationStatus: 'Vaccinated',
-      vaccinationSterilized: 'Sterilised', vaccinationIdentificationMarks: 'IdentificationMarks',
+      vaccinationHealthCondition: 'HealthCondition', vaccinationBehaviour: 'Behaviour',
       preventiveCareType: 'EventCategory', preventiveCareDate: 'DateOfEvent', preventiveCareGivenBy: 'OrganisationOrPerson',
       vaccineProductName: 'AdditionalDetails', medicalTreatmentDate: 'DateOfEvent', medicalTreatmentHealthCondition: 'HealthCondition',
       medicalTreatmentBehaviour: 'Behaviour', medicalTreatmentReason: 'EventCategory', medicalTreatmentGiven: 'EventDescription',
       medicalTreatmentProvidedBy: 'OrganisationOrPerson', medicalTreatmentAdditionalDetails: 'AdditionalDetails',
       sterilizationDateReported: 'DateReported', sterilizationHealthCondition: 'HealthCondition', sterilizationBehaviour: 'Behaviour',
-      sterilizationVaccinated: 'Vaccinated', sterilizationStatus: 'Sterilised', sterilizationIdentificationMarks: 'IdentificationMarks',
       sterilizationProcedureActions: 'EventCategory', sterilizationProcedureDate: 'DateOfEvent', sterilizationPerformedBy: 'OrganisationOrPerson',
       sterilizationRecoveryStatus: 'OutcomeCurrentStatus', sterilizationAdditionalDetails: 'AdditionalDetails', gpsLocation: 'GPSCoordinates', GpsLocation: 'GPSCoordinates'
     };
@@ -1728,7 +1717,7 @@
           if (submitButton) submitButton.disabled = false;
           alert('Server Error: ' + error.message);
         })
-        .apiLogCorrection(editState.type === 'animal' ? 'AnimalProfiles' : 'EventRecords', editState.type === 'animal' ? editState.carProfileId : editState.eventId, canonicalEditField(edit.fieldName), edit.oldValue, edit.newValue, 'Registry form edit', '', editState.carProfileId);
+        .apiLogCorrection(editState.type === 'animal' ? 'AnimalProfiles' : 'EventRecords', editState.type === 'animal' ? editState.carProfileId : editState.eventId, canonicalEditField(edit.fieldName), edit.oldValue, edit.newValue, 'Registry form edit', '', editState.carProfileId, adminToken);
     };
     saveNext();
   }
@@ -1755,7 +1744,7 @@
         renderProfileEvents(response.events || []);
       })
       .withFailureHandler(() => {})
-      .apiGetProfileEvents(carProfileId, isAdmin);
+      .apiGetProfileEvents(carProfileId, isAdmin, adminToken);
   }
 
   function renderProfileEvents(events) {
@@ -1918,6 +1907,7 @@
         <div class="detail-grid">
           <div class="detail-card"><div class="detail-card-title">Health Condition</div><div class="detail-card-value">${b.healthStatus || 'Unknown'}</div></div>
           <div class="detail-card"><div class="detail-card-title">Vaccination</div><div class="detail-card-value">${b.vaccinationStatus || 'Unknown'}</div></div>
+          <div class="detail-card"><div class="detail-card-title">Last vaccinated</div><div class="detail-card-value">${b.lastVaccinated || 'Not recorded'}</div></div>
           <div class="detail-card"><div class="detail-card-title">Sterilisation</div><div class="detail-card-value">${b.sterilisationStatus || 'Unknown'}</div></div>
           <div class="detail-card"><div class="detail-card-title">Identification Marks</div><div class="detail-card-value">${b.identificationMarks || 'None visible'}</div></div>
           <div class="detail-card"><div class="detail-card-title">Caregiver Status</div><div class="detail-card-value">${a.caregiverAnswer || 'Unknown'} ${a.caregiverType ? '(' + a.caregiverType + ')' : ''}</div></div>
@@ -2085,7 +2075,7 @@
       .withFailureHandler(function(err) {
         if (container) container.innerHTML = '<p class="form-message error">Error loading pending records: ' + err.message + '</p>';
       })
-      .apiGetPendingRecords();
+      .apiGetPendingRecords(adminToken);
   }
 
   function adminApproveEvent(encodedEventId) {
@@ -2111,7 +2101,7 @@
         showLoading(false);
         alert('Server error: ' + err.message);
       })
-      .apiApproveRecord(eventId, notes);
+      .apiApproveRecord(eventId, notes, adminToken);
   }
 
   function adminRejectEvent(encodedEventId) {
@@ -2136,7 +2126,7 @@
         showLoading(false);
         alert('Server error: ' + err.message);
       })
-      .apiRejectRecord(eventId, reason);
+      .apiRejectRecord(eventId, reason, adminToken);
   }
 
   /**
@@ -2200,7 +2190,7 @@
       .withFailureHandler(function(err) {
         container.innerHTML = '<p class="form-message error">Error loading audit log: ' + err.message + '</p>';
       })
-      .apiGetAuditCorrections();
+      .apiGetAuditCorrections(adminToken);
   }
 
   /**
@@ -2294,7 +2284,7 @@
       .withFailureHandler((err) => {
         container.innerHTML = '<p class="form-message error">Error loading holds: ' + err.message + '</p>';
       })
-      .apiGetPendingHolds();
+      .apiGetPendingHolds(adminToken);
   }
 
   /**
@@ -2457,7 +2447,7 @@
         showLoading(false);
         alert('Server error: ' + err.message);
       })
-      .apiResolveHold(holdId, action, 'Resolved via Admin Review Modal');
+      .apiResolveHold(holdId, action, 'Resolved via Admin Review Modal', adminToken);
   }
 
   window.loadAdminHolds = loadAdminHolds;
@@ -2842,7 +2832,7 @@
   function openProfileFromGallery(encodedCarProfileId) {
     const carProfileId = decodeEditValue(encodedCarProfileId);
     if (!carProfileId) return;
-    handleSearchById(carProfileId);
+    handleSearchById(String(carProfileId).trim());
   }
 
 </script>

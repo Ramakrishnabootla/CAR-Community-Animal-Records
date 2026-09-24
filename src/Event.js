@@ -84,6 +84,8 @@ function apiSaveEvent(data) {
       ...(resolvedEvent.formFields || {})
     });
 
+    syncProfileHealthFromEvent(carProfileId, resolvedEvent);
+
     // Save linked media with animal-type subfolder & dual EventID linkage
     if (data.media && data.media.length > 0) {
       const contributorName = data.contributorName || 'Contributor';
@@ -110,12 +112,37 @@ function apiSaveEvent(data) {
   }
 }
 
+function syncProfileHealthFromEvent(carProfileId, event) {
+  const eventType = String(event.eventType || '').toLowerCase();
+  const formFields = event.formFields || {};
+  const dateValue = sanitizeString(event.dateOfEvent) || sanitizeString(event.dateReported);
+  const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
+  const rowNumber = findDataRowNumber(baselineSheet, 1, carProfileId);
+  if (rowNumber < 2) return;
+
+  const headers = getSchemaHeaders(CONFIG.sheetNames.baselineStatus);
+  const indexOf = name => headers.findIndex(header => normalizeHeader(header) === normalizeHeader(name));
+  const values = baselineSheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
+  const sterilizationEvent = eventType.includes('steril') || !!formFields.sterilizationstatus;
+  const vaccinationEvent = eventType.includes('vaccin') || eventType.includes('preventive') || !!formFields.preventivecaretype;
+
+  if (sterilizationEvent) values[indexOf('SterilisationStatus')] = 'Sterilised';
+  if (vaccinationEvent && dateValue && dateValue.toLowerCase() !== 'unknown') {
+    const lastVaccinatedIndex = indexOf('LastVaccinated');
+    const existingDate = String(values[lastVaccinatedIndex] || '').trim();
+    if (!existingDate || new Date(dateValue).getTime() >= new Date(existingDate).getTime()) values[lastVaccinatedIndex] = dateValue;
+    values[indexOf('VaccinationStatus')] = 'Vaccinated';
+  }
+  baselineSheet.getRange(rowNumber, 1, 1, headers.length).setValues([values]);
+}
+
 /**
  * Log a traceable audit correction (W2.7)
  * Appends edit record to AuditCorrections sheet without overwriting original data
  */
-function apiLogCorrection(targetTable, targetRecordId, fieldName, oldValue, newValue, reason, contributorId, carProfileId) {
+function apiLogCorrection(targetTable, targetRecordId, fieldName, oldValue, newValue, reason, contributorId, carProfileId, adminToken) {
   try {
+    requireAdminAccess(adminToken);
     const edit = applyRecordEdit(targetTable, targetRecordId, carProfileId, fieldName, newValue);
     if (!edit.success) return edit;
     const correctionId = generateCorrectionID();

@@ -177,7 +177,7 @@ function getSchemaHeaders(sheetName) {
     case CONFIG.sheetNames.baselineStatus:
       return ['BaselineID', 'CARProfileID', 'HealthStatus', 'VaccinationStatus',
         'SterilisationStatus', 'Behavior', 'ABCStatus', 'ABCOutcome', 'IdentificationMarks',
-        'IdentificationOtherDetails', 'AdditionalDetails', 'Timestamp'];
+        'IdentificationOtherDetails', 'AdditionalDetails', 'LastVaccinated', 'Timestamp'];
     case CONFIG.sheetNames.media:
       return ['MediaID', 'CARProfileID', 'EventID', 'AnimalType', 'MediaType', 'DriveFileID', 'DriveFileURL',
         'FileName', 'Visibility', 'Source', 'UploadTimestamp'];

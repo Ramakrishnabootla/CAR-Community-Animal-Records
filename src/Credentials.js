@@ -10,5 +10,7 @@ function apiLogin(credentials) {
     return { success: false, error: 'Incorrect username or password.' };
   }
 
-  return { success: true, username: match.username, role: match.role };
+  const token = Utilities.getUuid();
+  CacheService.getScriptCache().put('car_admin_' + token, match.role, 21600);
+  return { success: true, username: match.username, role: match.role, token: token };
 }
