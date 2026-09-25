@@ -1748,6 +1748,15 @@
   }
 
   function renderProfileEvents(events) {
+    // Sort newest first for display
+    const sortedEvents = [...events].sort((a, b) => {
+      const dateA = new Date(a.dateOfEvent || a.timestamp || '').getTime();
+      const dateB = new Date(b.dateOfEvent || b.timestamp || '').getTime();
+      if (isNaN(dateA) && isNaN(dateB)) return 0;
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateB - dateA; // newest first
+    });
     const container = document.getElementById('profileEventHistory');
     const countBadge = document.getElementById('summaryEventCountBadge');
     const latestBox = document.getElementById('summaryLatestEventText');
@@ -1758,7 +1767,7 @@
 
     if (latestBox) {
       if (events && events.length > 0) {
-        const latest = events[0];
+        const latest = sortedEvents[0];
         const dateStr = latest.dateOfEvent || (latest.timestamp ? String(latest.timestamp).slice(0, 10) : '');
         latestBox.innerHTML = `<strong>${escapeHtml(latest.eventType || 'Event')}</strong>${dateStr ? ' on ' + escapeHtml(dateStr) : ''}${latest.outcomeCurrentStatus ? ' &bull; Outcome: <span style="color:var(--primary-color);font-weight:700;">' + escapeHtml(latest.outcomeCurrentStatus) + '</span>' : ''}${latest.eventDescription ? '<br><small style="color:var(--text-light);">' + escapeHtml(latest.eventDescription) + '</small>' : ''}`;
       } else {
@@ -1767,9 +1776,9 @@
     }
 
     if (!container) return;
-    container.innerHTML = events.length ? events.map(e => `
+    container.innerHTML = sortedEvents.length ? sortedEvents.map(e => `
         <div class="timeline-item" style="border-left:3px solid #2D7A5F; padding-left:16px; margin-bottom:20px;">
-          <div class="timeline-date" style="font-weight:700; color:#2D7A5F;">${e.dateOfEvent || e.timestamp} | ${e.eventType} ${isAdmin ? `<button type="button" class="btn-secondary" onclick="startEventEdit('${encodeEditValue(e.carProfileId || '')}','${encodeEditValue(e.eventId || '')}','${encodeEditValue(JSON.stringify(e))}')">Edit event</button>` : ((e.verificationStatus || '').toLowerCase() === 'verified' ? '<span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#e6f4ea; color:#137333; padding:2px 8px; border-radius:10px; font-weight:700; margin-left:8px;">🔒 Verified Record</span>' : '')}</div>
+          <div class="timeline-date" style="font-weight:700; color:#2D7A5F;">${e.dateOfEvent || e.timestamp} | ${e.eventType} ${isAdmin ? `<button type="button" class="btn-secondary" onclick="startEventEdit('${encodeEditValue(e.carProfileId || '')}','${encodeEditValue(e.eventId || '')}','${encodeEditValue(JSON.stringify(e))}')" >Edit event</button>` : ((e.verificationStatus || '').toLowerCase() === 'verified' ? '<span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; background:#e6f4ea; color:#137333; padding:2px 8px; border-radius:10px; font-weight:700; margin-left:8px;">🔒 Verified Record</span>' : '')}</div>
         <div class="timeline-content" style="margin-top:6px;">
           <p><strong>Description:</strong> ${escapeHtml(e.eventDescription || e.eventCategory || 'No description')}</p>
           <p><strong>Health:</strong> ${escapeHtml(e.healthCondition || 'Unknown')} | <strong>Vaccinated:</strong> ${escapeHtml(e.vaccinated || 'Unknown')} | <strong>Sterilised:</strong> ${escapeHtml(e.sterilised || 'Unknown')}</p>

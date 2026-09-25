@@ -31,8 +31,10 @@ function getOrCreateMediaFolder() {
 function getOrCreateAnimalTypeFolder(animalType) {
   const rootFolder = getOrCreateMediaFolder();
   const safeType = sanitizeString(animalType) || 'Other';
+  // Normalize Cow -> Cattle for folder grouping (both are the same animal category)
+  const normalizedType = (safeType === 'Cow') ? 'Cattle' : safeType;
   const validTypes = ['Dog', 'Cat', 'Bird', 'Cattle', 'Other'];
-  const folderName = validTypes.includes(safeType) ? safeType : 'Other';
+  const folderName = validTypes.includes(normalizedType) ? normalizedType : 'Other';
 
   const subfolders = rootFolder.getFoldersByName(folderName);
   if (subfolders.hasNext()) {

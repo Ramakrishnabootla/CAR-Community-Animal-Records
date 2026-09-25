@@ -112,7 +112,7 @@ function validateLocation(location) {
  */
 function isValidMobile(mobile) {
   // Remove spaces, dashes, and + sign
-  const cleaned = mobile.replace(/[\s\-+]/g, '');
+  const cleaned = String(mobile || '').replace(/[\s\-+]/g, '');
 
   // Must be 10 digits (Indian format) or 12 digits with country code
   return /^[0-9]{10}$/.test(cleaned) || /^[0-9]{12}$/.test(cleaned);

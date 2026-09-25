@@ -151,10 +151,13 @@ function applyEventHealthToProfile(carProfileId, baselineStatus) {
     if (isSterilization) derived.sterilisationStatus = 'Sterilised';
     if (isVaccination) {
       derived.vaccinationStatus = 'Vaccinated';
-      if (eventDate && eventDate.toLowerCase() !== 'unknown' &&
-          (!latestVaccinationDate || new Date(eventDate).getTime() >= new Date(latestVaccinationDate).getTime())) {
-        latestVaccinationDate = eventDate;
-      }
+      if (eventDate && eventDate.toLowerCase() !== 'unknown') {
+          const existingMs = new Date(latestVaccinationDate).getTime();
+          const newMs = new Date(eventDate).getTime();
+          if (!isNaN(newMs) && (!latestVaccinationDate || latestVaccinationDate.toLowerCase() === 'unknown' || isNaN(existingMs) || newMs >= existingMs)) {
+            latestVaccinationDate = eventDate;
+          }
+        }
     }
   });
 
@@ -176,6 +179,15 @@ function apiGetProfileEvents(carProfileID, includeDocuments, adminToken) {
     if (!cleanId) return { success: false, events: [], error: 'CAR Profile ID is required' };
 
     const eventRows = findEventRowsByProfileId(cleanId);
+    // Sort events chronologically by event date (oldest first)
+    eventRows.sort((a, b) => {
+      const dateA = new Date(String(a[20] || a[2] || '').trim()).getTime();
+      const dateB = new Date(String(b[20] || b[2] || '').trim()).getTime();
+      if (isNaN(dateA) && isNaN(dateB)) return 0;
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateA - dateB;
+    });
     const mediaRows = includeDocuments === true ? findAllRowsByID(CONFIG.sheetNames.media, 1, cleanId) : [];
     const mediaByEventId = {};
     mediaRows.forEach(row => {

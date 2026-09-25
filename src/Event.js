@@ -130,7 +130,11 @@ function syncProfileHealthFromEvent(carProfileId, event) {
   if (vaccinationEvent && dateValue && dateValue.toLowerCase() !== 'unknown') {
     const lastVaccinatedIndex = indexOf('LastVaccinated');
     const existingDate = String(values[lastVaccinatedIndex] || '').trim();
-    if (!existingDate || new Date(dateValue).getTime() >= new Date(existingDate).getTime()) values[lastVaccinatedIndex] = dateValue;
+    const existingDateMs = new Date(existingDate).getTime();
+    const newDateMs = new Date(dateValue).getTime();
+    if (!existingDate || existingDate.toLowerCase() === 'unknown' || isNaN(existingDateMs) || (!isNaN(newDateMs) && newDateMs >= existingDateMs)) {
+      values[lastVaccinatedIndex] = dateValue;
+    }
     values[indexOf('VaccinationStatus')] = 'Vaccinated';
   }
   baselineSheet.getRange(rowNumber, 1, 1, headers.length).setValues([values]);
