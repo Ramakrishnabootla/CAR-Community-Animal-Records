@@ -4,12 +4,6 @@
  * and Admin Hold Queue management.
  */
 
-/**
- * API Search function called from client UI.
- * Rules: Must match exactly. Missing or mistyped ID must show "Not Found" rather than silent profile creation.
- * @param {string} carProfileID - CAR ID to search
- * @return {Object} Profile data or null
- */
 function apiSearchProfile(carProfileID, includeDocuments, adminToken) {
   try {
     if (includeDocuments === true) requireAdminAccess(adminToken);
@@ -24,6 +18,12 @@ function apiSearchProfile(carProfileID, includeDocuments, adminToken) {
     if (!animalRow) {
       return { success: false, found: false };
     }
+    const animalsSheet = getSheet(CONFIG.sheetNames.animals);
+    const animalHeaders = animalsSheet.getRange(1, 1, 1, Math.max(1, animalsSheet.getLastColumn())).getDisplayValues()[0];
+    const animalFieldValue = (name, fallback = '') => {
+      const index = animalHeaders.findIndex(header => normalizeHeader(header) === normalizeHeader(name));
+      return index >= 0 ? animalRow[index] : fallback;
+    };
 
     // Animal details mapping
     const animal = {
@@ -42,7 +42,11 @@ function apiSearchProfile(carProfileID, includeDocuments, adminToken) {
       careOtherDetails: animalRow[12],
       contributorId: animalRow[13],
       locationId: animalRow[14],
-      timestamp: clientValue(animalRow[15])
+      timestamp: clientValue(animalRow[15]),
+      vaccinatedRabies: animalFieldValue('vaccinated_rabies', "Don't Know") || "Don't Know",
+      sterilized: animalFieldValue('sterilized'),
+      vaccinatedRabiesInitial: animalFieldValue('vaccinated_rabies_initial'),
+      sterilizedInitial: animalFieldValue('sterilized_initial')
     };
 
     // 2. Fetch Contributor details (privacy protection: strip sensitive contact fields in public searches)
@@ -88,6 +92,9 @@ function apiSearchProfile(carProfileID, includeDocuments, adminToken) {
       timestamp: clientValue(baselineRow[12])
     } : null;
     baselineStatus = applyEventHealthToProfile(cleanId, baselineStatus);
+    if (baselineStatus && /^(yes|sterilised|sterilized|done|completed)$/i.test(String(baselineStatus.sterilisationStatus || '').trim())) {
+      animal.sterilized = 'Yes';
+    }
 
     // 5. Fetch Media links
     const mediaRows = findAllRowsByID(CONFIG.sheetNames.media, 1, cleanId);
@@ -172,6 +179,85 @@ function requireAdminAccess(adminToken) {
   }
 }
 
+function eventRowToClientRecord(row, sheetHeaders) {
+  const headers = sheetHeaders && sheetHeaders.length ? sheetHeaders : getEventSchemaHeaders();
+  const values = {};
+  headers.forEach((header, index) => {
+    values[normalizeHeader(header)] = clientValue(row[index]) || '';
+  });
+  const formFields = {};
+  headers.forEach(header => {
+    formFields[normalizeHeader(header)] = values[normalizeHeader(header)] || '';
+  });
+  const additionalDetails = String(values.additionaldetails || '');
+  const detailFromText = (label) => {
+    const match = additionalDetails.match(new RegExp(`${label}:\\s*([^|]+)`, 'i'));
+    return match ? match[1].trim() : '';
+  };
+  const fallbackFields = {
+    pickedupby: values.organisationorperson,
+    reasonforpickup: values.eventcategory,
+    animaltakento: detailFromText('Animal taken to'),
+    rescuedcarriedoutby: values.organisationorperson,
+    organisationorpersoninvolved: values.organisationorperson,
+    eventdescription: values.eventdescription,
+    outcomecurrentstatus: values.outcomecurrentstatus
+  };
+  Object.keys(fallbackFields).forEach(key => {
+    if (!formFields[key] && fallbackFields[key]) formFields[key] = fallbackFields[key];
+  });
+  return {
+    eventId: values.eventid,
+    carProfileId: values.carid,
+    dateReported: values.datereported,
+    animalType: values.animaltype,
+    animalOtherDetails: values.animalotherdetails,
+    animalName: values.animalname,
+    area: values.area,
+    landmark: values.landmark,
+    googleLocationPin: values.gpslocation,
+    healthCondition: values.healthcondition,
+    healthOtherDetails: values.healthotherdetails,
+    behaviour: values.behaviour,
+    behaviourOtherDetails: values.behaviourotherdetails,
+    vaccinated: values.vaccinated,
+    sterilised: values.sterilised,
+    identificationMarks: values.identificationmarks,
+    identificationOtherDetails: values.identificationotherdetails,
+    eventType: values.eventtype,
+    eventCategory: values.eventcategory,
+    eventOtherDetails: values.eventotherdetails,
+    dateOfEvent: values.dateofevent,
+    organisationOrPerson: values.organisationorperson,
+    eventDescription: values.eventdescription,
+    outcomeCurrentStatus: values.outcomecurrentstatus,
+    additionalDetails: values.additionaldetails,
+    source: values.source || 'Self-reported',
+    verificationStatus: values.verification || 'Unverified',
+    visibility: values.visibility || 'Restricted',
+    rabiesVaccinationStatus: values.rabiesvaccinationstatussnapshot || '',
+    sterilizationStatusSnapshot: values.sterilizationstatussnapshot || '',
+    timestamp: values.timestamp,
+    formFields: formFields,
+    media: []
+  };
+}
+
+function apiGetEventById(eventId, adminToken) {
+  try {
+    requireAdminAccess(adminToken);
+    const target = findEventSheetRow(eventId);
+    if (!target) return { success: false, error: 'The selected event could not be found.' };
+    const width = Math.max(target.sheet.getLastColumn(), getEventSchemaHeaders().length);
+    const headers = target.sheet.getRange(1, 1, 1, width).getDisplayValues()[0].slice(0, width);
+    const row = target.sheet.getRange(target.rowNumber, 1, 1, width).getValues()[0];
+    return { success: true, event: eventRowToClientRecord(row, headers) };
+  } catch (err) {
+    Logger.log('Error loading event: ' + err.toString());
+    return { success: false, error: 'Unable to load the selected event: ' + err.toString() };
+  }
+}
+
 function apiGetProfileEvents(carProfileID, includeDocuments, adminToken) {
   try {
     if (includeDocuments === true) requireAdminAccess(adminToken);
@@ -179,15 +265,22 @@ function apiGetProfileEvents(carProfileID, includeDocuments, adminToken) {
     if (!cleanId) return { success: false, events: [], error: 'CAR Profile ID is required' };
 
     const eventRows = findEventRowsByProfileId(cleanId);
-    // Sort events chronologically by event date (oldest first)
+    // Sort by occurrence date, falling back to the record timestamp for legacy rows.
     eventRows.sort((a, b) => {
-      const dateA = new Date(String(a[20] || a[2] || '').trim()).getTime();
-      const dateB = new Date(String(b[20] || b[2] || '').trim()).getTime();
+      const eventDateA = new Date(String(a[20] || '').trim()).getTime();
+      const eventDateB = new Date(String(b[20] || '').trim()).getTime();
+      const dateA = isNaN(eventDateA) ? new Date(a[28] || '').getTime() : eventDateA;
+      const dateB = isNaN(eventDateB) ? new Date(b[28] || '').getTime() : eventDateB;
       if (isNaN(dateA) && isNaN(dateB)) return 0;
       if (isNaN(dateA)) return 1;
       if (isNaN(dateB)) return -1;
       return dateA - dateB;
     });
+    const profileResult = apiSearchProfile(cleanId);
+    const animal = profileResult && profileResult.success && profileResult.profile ? profileResult.profile.animal || {} : {};
+    const baseline = profileResult && profileResult.success && profileResult.profile ? profileResult.profile.baselineStatus || {} : {};
+    const eventRecords = eventRows.map(row => eventRowToClientRecord(row));
+    applyEventStatusSnapshots(eventRecords, animal, baseline);
     const mediaRows = includeDocuments === true ? findAllRowsByID(CONFIG.sheetNames.media, 1, cleanId) : [];
     const mediaByEventId = {};
     mediaRows.forEach(row => {
@@ -202,30 +295,49 @@ function apiGetProfileEvents(carProfileID, includeDocuments, adminToken) {
     });
     return {
       success: true,
-      events: eventRows.map(row => {
-        const formFields = {};
-        getEventSchemaHeaders().slice(29).forEach((header, index) => {
-          formFields[normalizeHeader(header)] = clientValue(row[29 + index]) || '';
-        });
-        return ({
-        eventId: row[0], carProfileId: row[1], dateReported: row[2], animalType: row[3], animalOtherDetails: row[4],
-        animalName: row[5], area: row[6], landmark: row[7], googleLocationPin: row[8],
-        healthCondition: row[9], healthOtherDetails: row[10], behaviour: row[11],
-        behaviourOtherDetails: row[12], vaccinated: row[13], sterilised: row[14],
-        identificationMarks: row[15], identificationOtherDetails: row[16], eventType: row[17],
-        eventCategory: row[18], eventOtherDetails: row[19], dateOfEvent: row[20], organisationOrPerson: row[21],
-        eventDescription: row[22], outcomeCurrentStatus: row[23], additionalDetails: row[24],
-        source: row[25] || 'Self-reported', verificationStatus: row[26] || 'Unverified', visibility: row[27] || 'Restricted',
-        timestamp: clientValue(row[28]),
-        formFields: formFields,
-        media: mediaByEventId[String(row[0] || '').replace(/^'/, '').trim().toLowerCase()] || []
-        });
+      events: eventRecords.map(event => {
+        event.media = mediaByEventId[String(event.eventId || '').replace(/^'/, '').trim().toLowerCase()] || [];
+        return event;
       })
     };
   } catch (err) {
     Logger.log('Error loading profile events: ' + err.toString());
     return { success: false, events: [], error: 'Unable to load event history: ' + err.toString() };
   }
+}
+
+function applyEventStatusSnapshots(eventRecords, animal, baseline) {
+    const normalizeStatus = value => {
+      const status = String(value || '').trim().toLowerCase();
+      if (status === 'yes') return 'Yes';
+      if (status === 'no') return 'No';
+      if (status === "don't know" || status === 'unknown') return "Don't Know";
+      return '';
+    };
+    const isRabiesEvent = event => {
+      const category = String(event.eventCategory || event.formFields && (event.formFields.preventivecaretype || event.formFields.eventcategory) || '').toLowerCase();
+      return category.includes('rabies') || category.includes('arv');
+    };
+    const isSterilizationEvent = event => String(event.eventType || '').toLowerCase().includes('steril');
+    const hasRabiesEvent = eventRecords.some(isRabiesEvent);
+    const hasSterilizationEvent = eventRecords.some(isSterilizationEvent);
+    const initialRabiesStatus = normalizeStatus(animal.vaccinatedRabiesInitial);
+    const initialSterilizationStatus = normalizeStatus(animal.sterilizedInitial);
+    let rabiesStatus = initialRabiesStatus || normalizeStatus(animal.vaccinatedRabies) || "Don't Know";
+    let sterilizationStatus = initialSterilizationStatus || normalizeStatus(animal.sterilized || baseline.sterilisationStatus) || "Don't Know";
+    if (!initialRabiesStatus && hasRabiesEvent && rabiesStatus === 'Yes') rabiesStatus = "Don't Know";
+    if (!initialSterilizationStatus && hasSterilizationEvent && sterilizationStatus === 'Yes') sterilizationStatus = "Don't Know";
+    eventRecords.forEach(event => {
+      const rabiesSnapshot = normalizeStatus(event.rabiesVaccinationStatus);
+      const sterilizationSnapshot = normalizeStatus(event.sterilizationStatusSnapshot);
+      if (rabiesSnapshot) rabiesStatus = rabiesSnapshot;
+      else if (isRabiesEvent(event)) rabiesStatus = 'Yes';
+      if (sterilizationSnapshot) sterilizationStatus = sterilizationSnapshot;
+      else if (isSterilizationEvent(event)) sterilizationStatus = 'Yes';
+      event.rabiesVaccinationStatus = rabiesStatus;
+      event.sterilizationStatusSnapshot = sterilizationStatus;
+    });
+  return eventRecords;
 }
 
 function getAdminMediaPreviewUrl(fileId, fileUrl, mediaType) {
@@ -577,11 +689,16 @@ function apiResolveHold(holdId, action, adminNotes, adminToken) {
           if (!submittedData.baselineStatus.behavior) submittedData.baselineStatus.behavior = 'Friendly';
           if (!submittedData.baselineStatus.identificationMarks) submittedData.baselineStatus.identificationMarks = 'None visible';
 
+          submittedData.media = Array.isArray(submittedData.media)
+            ? submittedData.media.filter(file => file && typeof file.base64Data === 'string' && file.base64Data.trim())
+            : [];
+
           const saveResult = apiSaveProfile(submittedData);
           if (!saveResult || !saveResult.success) {
             return { success: false, error: 'Failed to create profile: ' + (saveResult && saveResult.error ? saveResult.error : 'Unknown error') };
           }
           carProfileId = saveResult.carProfileId;
+          relinkHoldMediaToProfile(holdId, carProfileId);
           newStatus = 'Approved - Created (' + carProfileId + ')';
         } else if (action === 'CONFIRM_SAME') {
           newStatus = 'Resolved - Same Animal (' + String(data[i][1]).trim() + ')';
@@ -600,6 +717,23 @@ function apiResolveHold(holdId, action, adminNotes, adminToken) {
     return { success: false, error: 'Hold ID not found' };
   } catch (err) {
     return { success: false, error: err.toString() };
+  }
+}
+
+function relinkHoldMediaToProfile(holdId, carProfileId) {
+  try {
+    const sheet = getSheet(CONFIG.sheetNames.media);
+    const headers = getSchemaHeaders(CONFIG.sheetNames.media);
+    const carIdIndex = headers.findIndex(header => normalizeHeader(header) === 'carprofileid');
+    if (carIdIndex < 0 || sheet.getLastRow() < 2) return;
+    const rows = sheet.getDataRange().getDisplayValues();
+    const cleanHoldId = String(holdId || '').trim().replace(/^'/, '').toLowerCase();
+    for (let index = 1; index < rows.length; index++) {
+      const linkedId = String(rows[index][carIdIndex] || '').trim().replace(/^'/, '').toLowerCase();
+      if (linkedId === cleanHoldId) sheet.getRange(index + 1, carIdIndex + 1).setValue("'" + carProfileId);
+    }
+  } catch (err) {
+    Logger.log('Could not relink hold media: ' + err.toString());
   }
 }
 
@@ -709,6 +843,37 @@ function findAnimalRowByProfileId(profileId) {
   // BUG-05 FIX: Only search the Animals sheet. Removed the dangerous fallback to
   // Sheet[0] which could return rows from Contributors/Locations if Animals is not first.
   return findRowByID(CONFIG.sheetNames.animals, 0, profileId) || null;
+}
+
+function isAnimalMarkedSterilized(profileId) {
+  const animalSheet = getSheet(CONFIG.sheetNames.animals);
+  const animalHeaders = animalSheet.getRange(1, 1, 1, Math.max(1, animalSheet.getLastColumn())).getDisplayValues()[0];
+  const animalRow = findAnimalRowByProfileId(profileId);
+  const animalStatusIndex = animalHeaders.findIndex(header => normalizeHeader(header) === 'sterilized');
+  const animalStatus = animalRow && animalStatusIndex >= 0 ? animalRow[animalStatusIndex] : '';
+
+  const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
+  const baselineHeaders = baselineSheet.getRange(1, 1, 1, Math.max(1, baselineSheet.getLastColumn())).getDisplayValues()[0];
+  const baselineRow = findRowByID(CONFIG.sheetNames.baselineStatus, 1, profileId);
+  const baselineStatusIndex = baselineHeaders.findIndex(header => normalizeHeader(header) === 'sterilisationstatus');
+  const baselineStatus = baselineRow && baselineStatusIndex >= 0 ? baselineRow[baselineStatusIndex] : '';
+  const isConfirmed = value => /^(yes|sterilised|sterilized|done|completed)$/i.test(String(value || '').trim());
+
+  if (isConfirmed(animalStatus) || isConfirmed(baselineStatus)) return true;
+  const eventDerivedStatus = applyEventHealthToProfile(profileId, { sterilisationStatus: baselineStatus || '' });
+  return isConfirmed(eventDerivedStatus.sterilisationStatus);
+}
+
+function apiGetAnimalEventStatus(profileId) {
+  try {
+    if (!profileId || !findAnimalRowByProfileId(profileId)) {
+      return { success: false, error: 'CAR Profile ID was not found.' };
+    }
+    return { success: true, sterilized: isAnimalMarkedSterilized(profileId) };
+  } catch (err) {
+    Logger.log('Error loading animal event status: ' + err.toString());
+    return { success: false, error: 'Unable to verify animal status.' };
+  }
 }
 
 function getProfileArea(locationId) {
@@ -978,6 +1143,10 @@ function apiGetGalleryProfiles(filters) {
     var mediaSheet     = getSheet(CONFIG.sheetNames.media);
 
     var animalRows   = animalsSheet.getDataRange().getValues().slice(1);
+    var animalHeaders = animalsSheet.getRange(1, 1, 1, Math.max(1, animalsSheet.getLastColumn())).getDisplayValues()[0];
+    var rabiesStatusIndex = animalHeaders.findIndex(function(header) {
+      return normalizeHeader(header) === 'vaccinatedrabies';
+    });
     var locationRows = locationsSheet.getDataRange().getValues().slice(1);
     var baselineRows = baselineSheet.getDataRange().getValues().slice(1);
     var mediaRows    = mediaSheet.getDataRange().getValues().slice(1);
@@ -1068,7 +1237,7 @@ function apiGetGalleryProfiles(filters) {
         area:                loc.area,
         city:                loc.city,
         currentStatus:       baseline.healthStatus        || 'Unknown',
-        vaccinationStatus:   baseline.vaccinationStatus   || 'Unknown',
+        vaccinatedRabies:    rabiesStatusIndex >= 0 ? String(r[rabiesStatusIndex] || "Don't Know").trim() : "Don't Know",
         sterilisationStatus: baseline.sterilisationStatus || 'Unknown',
         abcStatus:           baseline.abcStatus           || 'Unknown',
         photoUrl:            photoMap[carId]              || '',
@@ -1233,14 +1402,18 @@ function apiGetPendingRecords(adminToken) {
 
     var spreadsheet   = getSpreadsheet();
     var pendingEvents = [];
+    var pendingEventIds = {};
     getAllEventSheetNames().forEach(function(sheetName) {
       var sheet = spreadsheet.getSheetByName(sheetName);
       if (!sheet || sheet.getLastRow() < 2) return;
       sheet.getDataRange().getValues().slice(1).forEach(function(r) {
         var verif = String(r[26]||'').trim().toLowerCase();
         if (!verif || verif === 'unverified' || verif === 'pending') {
+          var eventId = String(r[0]||'').replace(/^'/,'').trim();
+          if (!eventId || pendingEventIds[eventId]) return;
+          pendingEventIds[eventId] = true;
           pendingEvents.push({
-            eventId:           String(r[0]||'').replace(/^'/,'').trim(),
+            eventId:           eventId,
             carProfileId:      String(r[1]||'').replace(/^'/,'').trim(),
             eventType:         String(r[17]||'').trim(),
             dateOfEvent:       clientValue(r[20]),
@@ -1287,16 +1460,22 @@ function apiApproveRecord(eventId, adminNotes, adminToken) {
     var cleanEventId = String(eventId || '').replace(/^'/, '').trim();
     if (!cleanEventId) return { success: false, error: 'Event ID is required' };
 
-    var eventTarget = findEventSheetRow(cleanEventId);
-    if (!eventTarget) return { success: false, error: 'Event not found: ' + cleanEventId };
+    var eventTargets = findEventSheetRows(cleanEventId);
+    if (!eventTargets.length) return { success: false, error: 'Event not found: ' + cleanEventId };
 
-    var sheet     = eventTarget.sheet;
-    var rowNumber = eventTarget.rowNumber;
     var verCol    = 27; // 1-indexed: Verification is the 27th column
-    var oldValue  = sheet.getRange(rowNumber, verCol).getDisplayValue();
-    sheet.getRange(rowNumber, verCol).setValue('Verified');
+    var oldValue  = '';
+    var changed   = false;
+    eventTargets.forEach(function(target) {
+      var verificationCell = target.sheet.getRange(target.rowNumber, verCol);
+      var currentValue = verificationCell.getDisplayValue();
+      if (!oldValue) oldValue = currentValue;
+      if (String(currentValue || '').trim().toLowerCase() !== 'verified') changed = true;
+      verificationCell.setValue('Verified');
+    });
 
-    var carId = String(sheet.getRange(rowNumber, 2).getDisplayValue() || '').replace(/^'/, '').trim();
+    var carId = String(eventTargets[0].sheet.getRange(eventTargets[0].rowNumber, 2).getDisplayValue() || '').replace(/^'/, '').trim();
+    if (!changed) return { success: true, eventId: cleanEventId, newStatus: 'Verified' };
     var resolvedBy = 'Admin';
     try { resolvedBy = Session.getActiveUser().getEmail() || 'Admin'; } catch(e) {}
 

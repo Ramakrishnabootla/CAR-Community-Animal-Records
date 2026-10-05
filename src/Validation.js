@@ -75,6 +75,7 @@ function validateContributor(contributor) {
  */
 function validateAnimal(animal) {
   const errors = [];
+  const validStatuses = ['Yes', 'No', "Don't Know"];
 
   // Animal Type (required)
   const validTypes = ['Dog', 'Cat', 'Bird', 'Cow', 'Cattle', 'Other'];
@@ -86,6 +87,8 @@ function validateAnimal(animal) {
   if (!animal.age || animal.age.trim().length === 0) errors.push('Approximate age is required');
   if (!animal.caregiverAnswer || animal.caregiverAnswer.trim().length === 0) errors.push('Caregiver answer is required');
   if (animal.caregiverAnswer === 'Yes' && (!animal.caregiverType || animal.caregiverType.trim().length === 0)) errors.push('Please tell us who takes care of the animal');
+  if (animal.vaccinatedRabies && !validStatuses.includes(animal.vaccinatedRabies)) errors.push('Rabies vaccination status must be Yes, No, or Don\'t Know');
+  if (animal.sterilized && !validStatuses.includes(animal.sterilized)) errors.push('Sterilization status must be Yes, No, or Don\'t Know');
 
   return errors;
 }

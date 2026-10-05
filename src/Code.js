@@ -170,7 +170,7 @@ function getSchemaHeaders(sheetName) {
       return ['CARProfileID', 'AnimalName', 'AnimalType', 'BreedType', 'NativeDogType',
         'BreedOtherDetails', 'Sex', 'Age', 'CaregiverAnswer', 'CaregiverType',
         'CaregiverOtherDetails', 'CareProvided', 'CareOtherDetails', 'ContributorID',
-        'LocationID', 'Timestamp'];
+        'LocationID', 'Timestamp', 'vaccinated_rabies', 'sterilized', 'vaccinated_rabies_initial', 'sterilized_initial'];
     case CONFIG.sheetNames.locations:
       return ['LocationID', 'UsualLocationType', 'State', 'City', 'Area', 'Landmark',
         'GPSCoordinates', 'GPSLatitude', 'GPSLongitude', 'GPSCapturedMethod', 'SeenRegularly', 'Timestamp'];
@@ -225,7 +225,8 @@ function getEventSchemaHeaders() {
     'SterilizationPerformedBy', 'SterilizationEarNotchApplied', 'SterilizationRecoveryStatus',
     'SterilizationAdditionalDetails', 'MedicalTreatmentDate', 'MedicalTreatmentHealthCondition',
     'MedicalTreatmentBehaviour', 'MedicalTreatmentReason', 'MedicalTreatmentGiven',
-    'MedicalTreatmentProvidedBy', 'MedicalTreatmentSupportNeeded', 'MedicalTreatmentAdditionalDetails'];
+    'MedicalTreatmentProvidedBy', 'MedicalTreatmentSupportNeeded', 'MedicalTreatmentAdditionalDetails',
+    'RabiesVaccinationStatusSnapshot', 'SterilizationStatusSnapshot'];
 }
 
 function isEventSheet(sheetName) {
@@ -332,6 +333,23 @@ function migrateSheetToSchema(sheet, sheetName) {
   sheet.getRange(1, 1, 1, newHeaders.length).setFontWeight('bold');
   sheet.setFrozenRows(1);
   return { rows: migratedRows.length, migrated: migrated };
+}
+
+function migrateAnimalsStatusSchema() {
+  const sheet = getSheet(CONFIG.sheetNames.animals);
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
+  const requiredHeaders = ['vaccinated_rabies', 'sterilized', 'vaccinated_rabies_initial', 'sterilized_initial'];
+  const addedHeaders = [];
+  requiredHeaders.forEach(header => {
+    if (headers.some(existing => normalizeHeader(existing) === normalizeHeader(header))) return;
+    const column = sheet.getLastColumn() + 1;
+    sheet.getRange(1, column).setValue(header).setFontWeight('bold');
+    headers.push(header);
+    addedHeaders.push(header);
+  });
+  sheet.setFrozenRows(1);
+  return { success: true, sheet: CONFIG.sheetNames.animals, rows: Math.max(0, sheet.getLastRow() - 1), addedHeaders: addedHeaders };
 }
 
 function normalizePlainTextValue(value, header, sheetName) {

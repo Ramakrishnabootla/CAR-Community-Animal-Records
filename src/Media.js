@@ -54,6 +54,9 @@ function getOrCreateAnimalTypeFolder(animalType) {
  * @return {string} Drive file ID
  */
 function saveMediaFile(carProfileId, contributorName, animalType, fileObj) {
+  if (!fileObj || typeof fileObj.base64Data !== 'string' || !fileObj.base64Data.trim()) {
+    throw new Error('Media file data is missing. Please upload the file again.');
+  }
   const targetFolder = getOrCreateAnimalTypeFolder(animalType);
 
   // Determine file extension
@@ -115,8 +118,13 @@ function saveMediaFile(carProfileId, contributorName, animalType, fileObj) {
 function validateMediaFiles(files) {
   const errors = [];
   if (!files) return errors;
+  if (!Array.isArray(files)) return ['Uploaded media must be a list of files'];
   if (files.length > 5) errors.push('Upload up to 5 files');
   files.forEach(file => {
+    if (!file || typeof file.base64Data !== 'string' || !file.base64Data.trim()) {
+      errors.push(((file && file.filename) || 'Selected file') + ' is missing file data');
+      return;
+    }
     const base64Length = String(file.base64Data || '').split(',').pop().length;
     const sizeBytes = Math.floor(base64Length * 3 / 4);
     if (sizeBytes > 10 * 1024 * 1024) errors.push(file.filename + ' exceeds the 10 MB limit');

@@ -14,7 +14,9 @@
         <img src="https://ssl.gstatic.com/docs/common/product/forms_app_icon1.png" alt="CAR Logo" class="logo">
         <span>Community Animal Records</span>
       </div>
-      <div class="nav-links">
+      <div class="nav-slider" role="region" aria-label="Main navigation">
+        <button type="button" class="nav-scroll-control" aria-label="Scroll navigation left" title="Scroll navigation left" onclick="scrollMainNavigation(-1)">‹</button>
+        <div class="nav-links" id="navLinks">
         <a href="#home" onclick="showPage('home')">How it works</a>
         <a href="#dashboard" onclick="showPage('dashboard')">📊 Dashboard</a>
         <a href="#gallery" onclick="showPage('gallery')">🖼️ Gallery</a>
@@ -26,6 +28,8 @@
           <button class="btn-secondary" onclick="showPage('admin')">Admin Queue</button>
           <button class="btn-secondary" onclick="logoutAdmin()">Log out</button>
         </span>
+        </div>
+        <button type="button" class="nav-scroll-control" aria-label="Scroll navigation right" title="Scroll navigation right" onclick="scrollMainNavigation(1)">›</button>
       </div>
     </div>
   </nav>
@@ -284,6 +288,20 @@
                 </select>
               </div>
 
+              <div class="form-group" style="margin:0;">
+                <label>Rabies Vaccination Status</label>
+                <select id="sbcVaccinatedRabies">
+                  <option>Don't Know</option><option>Yes</option><option>No</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="margin:0;">
+                <label>Sterilization Status</label>
+                <select id="sbcSterilized">
+                  <option>Don't Know</option><option>Yes</option><option>No</option>
+                </select>
+              </div>
+
               <!-- Behaviour -->
               <div class="form-group" style="margin:0;">
                 <label>Behaviour <span class="required">*</span></label>
@@ -488,11 +506,11 @@
               </select>
             </div>
             <div class="form-group">
-              <label>Vaccination Status</label>
-              <select name="vaccinationStatus">
-                <option value="Unknown">Unknown</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
+              <label>Rabies vaccination status</label>
+              <select name="vaccinatedRabies">
+                <option>Don't Know</option>
+                <option>Yes</option>
+                <option>No</option>
               </select>
             </div>
             <div class="form-group"><label>Behaviour <span class="required">*</span></label><select name="behavior" required><option value="">-- Select --</option><option>Friendly</option><option>Shy</option><option>Loner</option><option>Neutral</option><option>Protective</option><option>Reactive</option><option>Scared</option><option>Hides</option><option>Doesn't allow touching</option><option>Doesn't come near</option><option>Friendly but keeps distance</option></select></div>
@@ -502,11 +520,11 @@
             <div class="form-group"><label>If Other, identification details</label><input type="text" name="identificationOtherDetails"></div>
             <div class="form-group"><label>Any other details you'd like to add?</label><textarea name="additionalDetails" rows="3"></textarea></div>
             <div class="form-group">
-              <label>Sterilisation Status</label>
+              <label>Sterilization Status</label>
               <select name="sterilisationStatus">
-                <option value="Unknown">Unknown</option>
-                <option value="Sterilised">Sterilised</option>
-                <option value="Unsterilised">Unsterilised</option>
+                <option>Don't Know</option>
+                <option>Yes</option>
+                <option>No</option>
               </select>
             </div>
             <div class="form-group">
@@ -537,13 +555,14 @@
 
   <!-- Page: Add Event -->
   <div id="page-event" class="page">
-    <section class="section-create"><div class="container"><h2>Add an event</h2><p class="create-subtitle">Add a new record to an existing CAR profile.</p>
+    <section class="section-create"><div class="container"><h2 id="eventPageTitle">Add an event</h2><p id="eventPageSubtitle" class="create-subtitle">Add a new record to an existing CAR profile.</p>
       
       <!-- Event Success Message Banner Container -->
       <div id="eventSuccessContainer"></div>
 
       <form id="eventForm" class="profile-form" onsubmit="handleEventSubmit(event)" novalidate>
         <input type="hidden" name="carProfileId" id="eventCarProfileId">
+        <input type="hidden" name="eventId" id="eventId">
         <input type="hidden" name="eventType" id="eventType" value="Vaccination or Preventive Care">
 
         <div class="form-section">
@@ -555,7 +574,17 @@
             <div id="additionalEventTypeButtons" class="event-kind-toggle"></div>
           </div>
         </div>
+        <p id="sterilizationEventNotice" class="event-kind-notice" role="status" hidden></p>
 
+        <div class="form-section event-occurrence-date">
+          <div class="form-group">
+            <label for="eventOccurrenceDate">Date of event <span class="required-star">*</span></label>
+            <input class="form-control" type="date" id="eventOccurrenceDate" name="eventOccurrenceDate" required>
+          </div>
+        </div>
+
+        <div id="coreEventPanels"></div>
+        <template data-event-panel-template="Vaccination or Preventive Care">
         <div class="form-section event-detail-panel" data-event-panel="Vaccination or Preventive Care">
           <h3>Vaccination or Preventive Care</h3>
           <div class="form-group">
@@ -600,7 +629,7 @@
             <label>Type of Preventive Care <span class="required">*</span></label>
             <select name="preventiveCareType" required>
               <option value="">-- Select --</option>
-              <option>ARV Vaccination</option>
+              <option>Rabies vaccination (ARV)</option>
               <option>Core Vaccination</option>
               <option>Booster Vaccination</option>
               <option>Deworming</option>
@@ -636,7 +665,9 @@
             <small>Upload up to 5 files, maximum 10 MB per file.</small>
           </div>
         </div>
+        </template>
 
+        <template data-event-panel-template="Sterilization">
         <div class="form-section event-detail-panel" data-event-panel="Sterilization" style="display:none;">
           <h3>Sterilization</h3>
           <div class="form-group"><label>Date Reported</label><input type="date" name="sterilizationDateReported"></div>
@@ -656,7 +687,9 @@
           <div class="form-group"><label>Add Sterilization Certificate / Photos / Supporting Documents <span class="optional-text">(Optional)</span></label><input type="file" accept="image/*,video/*,application/pdf" multiple onchange="handleEventFileSelect(event)"><div class="file-list"></div><small>Upload up to 5 supported files. Max 10 MB per file.</small></div>
           <div class="form-group"><label>Any other details you'd like to add?</label><textarea name="sterilizationAdditionalDetails" rows="3"></textarea></div>
         </div>
+        </template>
 
+        <template data-event-panel-template="Medical Treatment">
         <div class="form-section event-detail-panel" data-event-panel="Medical Treatment" style="display:none;">
           <h3>Medical Treatment</h3>
           <div class="form-group">
@@ -742,6 +775,7 @@
             <textarea name="medicalTreatmentAdditionalDetails" rows="3"></textarea>
           </div>
         </div>
+        </template>
 
         <div id="additionalEventPanels"></div>
 

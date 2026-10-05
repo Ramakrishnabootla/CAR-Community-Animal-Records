@@ -77,6 +77,10 @@ function apiSaveProfile(data) {
       breedotherdetails: sanitizeString(data.animal.breedOtherDetails),
       sex: sanitizeString(data.animal.sex),
       age: sanitizeString(data.animal.age),
+      vaccinated_rabies: normalizeAnimalStatus(data.animal.vaccinatedRabies, "Don't Know"),
+      sterilized: normalizeAnimalStatus(data.animal.sterilized || data.baselineStatus.sterilisationStatus, "Don't Know"),
+      vaccinated_rabies_initial: normalizeAnimalStatus(data.animal.vaccinatedRabies, "Don't Know"),
+      sterilized_initial: normalizeAnimalStatus(data.animal.sterilized || data.baselineStatus.sterilisationStatus, "Don't Know"),
       caregiveranswer: sanitizeString(data.animal.caregiverAnswer),
       caregivertype: sanitizeString(data.animal.caregiverType),
       caregiverotherdetails: sanitizeString(data.animal.caregiverOtherDetails),
@@ -135,6 +139,14 @@ function apiSaveProfile(data) {
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+function normalizeAnimalStatus(value, fallback) {
+  const status = sanitizeString(value).toLowerCase();
+  if (status === 'yes' || status === 'vaccinated' || status === 'sterilised' || status === 'sterilized') return 'Yes';
+  if (status === 'no' || status === 'unsterilised' || status === 'unsterilized') return 'No';
+  if (status === "don't know" || status === 'unknown') return "Don't Know";
+  return fallback;
 }
 
 /**

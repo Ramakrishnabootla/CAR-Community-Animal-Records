@@ -51,6 +51,10 @@ function apiSaveEvent(data) {
     const eventId = 'EVT-' + generateRandomString(8);
     const eventSheetName = getEventSheetName(resolvedEvent.eventType);
     const eventSheet = getSheet(eventSheetName);
+    const normalizedFormFields = {};
+    Object.keys(resolvedEvent.formFields || {}).forEach(fieldName => {
+      normalizedFormFields[normalizeHeader(fieldName)] = resolvedEvent.formFields[fieldName];
+    });
     appendRecordBySchema(eventSheet, eventSheetName, {
       eventid: eventId,
       carid: "'" + carProfileId,
@@ -81,10 +85,11 @@ function apiSaveEvent(data) {
       verification: resolvedEvent.verificationStatus,
       visibility: resolvedEvent.visibility,
       timestamp: new Date(),
-      ...(resolvedEvent.formFields || {})
+      ...normalizedFormFields
     });
 
     syncProfileHealthFromEvent(carProfileId, resolvedEvent);
+    saveEventStatusSnapshot(eventSheet, eventId, carProfileId);
 
     // Save linked media with animal-type subfolder & dual EventID linkage
     if (data.media && data.media.length > 0) {
@@ -112,32 +117,130 @@ function apiSaveEvent(data) {
   }
 }
 
+function saveEventStatusSnapshot(eventSheet, eventId, carProfileId) {
+  const profileResult = apiSearchProfile(carProfileId);
+  if (!profileResult || !profileResult.success || !profileResult.profile) return;
+  const animal = profileResult.profile.animal || {};
+  const rowNumber = findDataRowNumber(eventSheet, 0, eventId);
+  if (rowNumber < 2) return;
+  const width = Math.max(eventSheet.getLastColumn(), getEventSchemaHeaders().length);
+  const headers = eventSheet.getRange(1, 1, 1, width).getDisplayValues()[0];
+  const rabiesIndex = headers.findIndex(header => normalizeHeader(header) === 'rabiesvaccinationstatussnapshot');
+  const sterilizationIndex = headers.findIndex(header => normalizeHeader(header) === 'sterilizationstatussnapshot');
+  if (rabiesIndex >= 0) eventSheet.getRange(rowNumber, rabiesIndex + 1).setValue(animal.vaccinatedRabies || "Don't Know");
+  if (sterilizationIndex >= 0) eventSheet.getRange(rowNumber, sterilizationIndex + 1).setValue(animal.sterilized || "Don't Know");
+}
+
+function updateExistingEventStatusSnapshotsToCurrentGlobalValues() {
+  migrateAnimalsStatusSchema();
+  const spreadsheet = getSpreadsheet();
+  const animalsSheet = getSheet(CONFIG.sheetNames.animals);
+  const animalHeaders = animalsSheet.getRange(1, 1, 1, Math.max(1, animalsSheet.getLastColumn())).getDisplayValues()[0];
+  const animalRows = animalsSheet.getDataRange().getValues().slice(1);
+  const headerIndex = header => animalHeaders.findIndex(value => normalizeHeader(value) === normalizeHeader(header));
+  const carIdIndex = headerIndex('CARProfileID');
+  const rabiesIndex = headerIndex('vaccinated_rabies');
+  const sterilizationIndex = headerIndex('sterilized');
+  const animalStatuses = new Map();
+  animalRows.forEach(row => {
+    const carId = String(row[carIdIndex] || '').trim().replace(/^'/, '').toLowerCase();
+    if (!carId) return;
+    animalStatuses.set(carId, {
+      rabies: normalizeAnimalStatus(row[rabiesIndex], "Don't Know"),
+      sterilization: normalizeAnimalStatus(row[sterilizationIndex], "Don't Know")
+    });
+  });
+
+  let sheetsUpdated = 0;
+  let eventsUpdated = 0;
+  let eventsWithoutAnimal = 0;
+  const missingAnimalIds = new Set();
+  getAllEventSheetNames().forEach(sheetName => {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const migration = migrateSheetToSchema(sheet, sheetName);
+    const headers = getEventSchemaHeaders();
+    const rabiesColumn = headers.findIndex(header => normalizeHeader(header) === 'rabiesvaccinationstatussnapshot');
+    const sterilizationColumn = headers.findIndex(header => normalizeHeader(header) === 'sterilizationstatussnapshot');
+    const rows = sheet.getRange(2, 1, migration.rows, headers.length).getValues();
+    const rabiesSnapshots = [];
+    const sterilizationSnapshots = [];
+    let sheetUpdated = false;
+    rows.forEach((row, index) => {
+      const carId = String(row[1] || '').trim().replace(/^'/, '').toLowerCase();
+      const status = animalStatuses.get(carId);
+      if (!status) {
+        if (carId) missingAnimalIds.add(carId);
+        eventsWithoutAnimal++;
+        rabiesSnapshots.push([row[rabiesColumn] || "Don't Know"]);
+        sterilizationSnapshots.push([row[sterilizationColumn] || "Don't Know"]);
+        return;
+      }
+      rabiesSnapshots.push([status.rabies]);
+      sterilizationSnapshots.push([status.sterilization]);
+      eventsUpdated++;
+      sheetUpdated = true;
+    });
+    if (rabiesSnapshots.length) {
+      sheet.getRange(2, rabiesColumn + 1, rabiesSnapshots.length, 1).setValues(rabiesSnapshots);
+      sheet.getRange(2, sterilizationColumn + 1, sterilizationSnapshots.length, 1).setValues(sterilizationSnapshots);
+    }
+    if (sheetUpdated) sheetsUpdated++;
+  });
+
+  return {
+    success: true,
+    sheetsUpdated: sheetsUpdated,
+    eventsUpdated: eventsUpdated,
+    eventsWithoutAnimal: eventsWithoutAnimal,
+    missingAnimalIds: Array.from(missingAnimalIds)
+  };
+}
+
 function syncProfileHealthFromEvent(carProfileId, event) {
   const eventType = String(event.eventType || '').toLowerCase();
   const formFields = event.formFields || {};
   const dateValue = sanitizeString(event.dateOfEvent) || sanitizeString(event.dateReported);
+  const vaccineType = String(event.eventCategory || formFields.preventivecaretype || '').toLowerCase();
   const baselineSheet = getSheet(CONFIG.sheetNames.baselineStatus);
   const rowNumber = findDataRowNumber(baselineSheet, 1, carProfileId);
-  if (rowNumber < 2) return;
-
-  const headers = getSchemaHeaders(CONFIG.sheetNames.baselineStatus);
-  const indexOf = name => headers.findIndex(header => normalizeHeader(header) === normalizeHeader(name));
-  const values = baselineSheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
   const sterilizationEvent = eventType.includes('steril') || !!formFields.sterilizationstatus;
   const vaccinationEvent = eventType.includes('vaccin') || eventType.includes('preventive') || !!formFields.preventivecaretype;
+  const rabiesVaccinationEvent = vaccineType.includes('rabies') || vaccineType.includes('arv');
 
-  if (sterilizationEvent) values[indexOf('SterilisationStatus')] = 'Sterilised';
-  if (vaccinationEvent && dateValue && dateValue.toLowerCase() !== 'unknown') {
-    const lastVaccinatedIndex = indexOf('LastVaccinated');
-    const existingDate = String(values[lastVaccinatedIndex] || '').trim();
-    const existingDateMs = new Date(existingDate).getTime();
-    const newDateMs = new Date(dateValue).getTime();
-    if (!existingDate || existingDate.toLowerCase() === 'unknown' || isNaN(existingDateMs) || (!isNaN(newDateMs) && newDateMs >= existingDateMs)) {
-      values[lastVaccinatedIndex] = dateValue;
+  if (rowNumber >= 2) {
+    const headers = getSchemaHeaders(CONFIG.sheetNames.baselineStatus);
+    const indexOf = name => headers.findIndex(header => normalizeHeader(header) === normalizeHeader(name));
+    const values = baselineSheet.getRange(rowNumber, 1, 1, headers.length).getValues()[0];
+    if (sterilizationEvent) values[indexOf('SterilisationStatus')] = 'Sterilised';
+    if (vaccinationEvent && dateValue && dateValue.toLowerCase() !== 'unknown') {
+      const lastVaccinatedIndex = indexOf('LastVaccinated');
+      const existingDate = String(values[lastVaccinatedIndex] || '').trim();
+      const existingDateMs = new Date(existingDate).getTime();
+      const newDateMs = new Date(dateValue).getTime();
+      if (!existingDate || existingDate.toLowerCase() === 'unknown' || isNaN(existingDateMs) || (!isNaN(newDateMs) && newDateMs >= existingDateMs)) {
+        values[lastVaccinatedIndex] = dateValue;
+      }
+      values[indexOf('VaccinationStatus')] = 'Vaccinated';
     }
-    values[indexOf('VaccinationStatus')] = 'Vaccinated';
+    baselineSheet.getRange(rowNumber, 1, 1, headers.length).setValues([values]);
   }
-  baselineSheet.getRange(rowNumber, 1, 1, headers.length).setValues([values]);
+
+  if (sterilizationEvent) setAnimalStatusField(carProfileId, 'sterilized', 'Yes');
+  if (rabiesVaccinationEvent) setAnimalStatusField(carProfileId, 'vaccinated_rabies', 'Yes');
+}
+
+function setAnimalStatusField(carProfileId, fieldName, value) {
+  const animalSheet = getSheet(CONFIG.sheetNames.animals);
+  let headers = animalSheet.getRange(1, 1, 1, Math.max(1, animalSheet.getLastColumn())).getDisplayValues()[0];
+  let columnIndex = headers.findIndex(header => normalizeHeader(header) === normalizeHeader(fieldName));
+  if (columnIndex < 0) {
+    migrateSheetToSchema(animalSheet, CONFIG.sheetNames.animals);
+    headers = animalSheet.getRange(1, 1, 1, animalSheet.getLastColumn()).getDisplayValues()[0];
+    columnIndex = headers.findIndex(header => normalizeHeader(header) === normalizeHeader(fieldName));
+  }
+  const rowNumber = findDataRowNumber(animalSheet, 0, carProfileId);
+  if (rowNumber >= 2 && columnIndex >= 0) animalSheet.getRange(rowNumber, columnIndex + 1).setValue(value);
 }
 
 /**
@@ -181,6 +284,12 @@ function applyRecordEdit(targetTable, targetRecordId, carProfileId, fieldName, n
 
   if (target === 'AnimalProfiles') {
     const animalSheet = getSheet(CONFIG.sheetNames.animals);
+    const animalSchemaHeaders = getSchemaHeaders(CONFIG.sheetNames.animals);
+    const currentAnimalHeaders = animalSheet.getRange(1, 1, 1, Math.max(animalSheet.getLastColumn(), animalSchemaHeaders.length))
+      .getDisplayValues()[0].slice(0, animalSchemaHeaders.length).map(value => String(value).trim());
+    if (currentAnimalHeaders.join('|') !== animalSchemaHeaders.join('|') || animalSheet.getLastColumn() !== animalSchemaHeaders.length) {
+      migrateSheetToSchema(animalSheet, CONFIG.sheetNames.animals);
+    }
     const animalRowNumber = findDataRowNumber(animalSheet, 0, targetRecordId);
     if (animalRowNumber >= 2) {
       const profileFieldGroups = [
@@ -211,6 +320,10 @@ function applyRecordEdit(targetTable, targetRecordId, carProfileId, fieldName, n
   const cell = sheet.getRange(rowNumber, columnIndex + 1);
   const oldValue = cell.getDisplayValue();
   cell.setValue(newValue === null || newValue === undefined ? '' : String(newValue));
+  if (target === 'AnimalProfiles' && normalizedField === 'sterilisationstatus') {
+    const normalizedStatus = normalizeAnimalStatus(newValue, "Don't Know");
+    setAnimalStatusField(targetRecordId, 'sterilized', normalizedStatus);
+  }
   return { success: true, oldValue: oldValue };
 }
 
@@ -235,6 +348,24 @@ function findEventSheetRow(eventId) {
   return null;
 }
 
+function findEventSheetRows(eventId) {
+  const spreadsheet = getSpreadsheet();
+  const cleanId = String(eventId || '').trim().replace(/^'/, '').toLowerCase();
+  const matches = [];
+  if (!cleanId) return matches;
+  getAllEventSheetNames().forEach(sheetName => {
+    const sheet = spreadsheet.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return;
+    const rows = sheet.getDataRange().getDisplayValues();
+    rows.slice(1).forEach((row, index) => {
+      if (String(row[0] || '').trim().replace(/^'/, '').toLowerCase() === cleanId) {
+        matches.push({ sheet: sheet, rowNumber: index + 2 });
+      }
+    });
+  });
+  return matches;
+}
+
 function normalizeDateValue(value, fallback) {
   if (!value || !String(value).trim() || String(value).trim().toLowerCase() === 'unknown') {
     return fallback || 'Unknown';
@@ -247,5 +378,9 @@ function validateEventData(data) {
   if (!data || !data.carProfileId || !String(data.carProfileId).trim()) errors.push('CAR Profile ID is required');
   const event = data && data.event ? data.event : {};
   if (!event.eventType || !String(event.eventType).trim()) errors.push('Type of event is required');
+  if (!event.dateOfEvent || !String(event.dateOfEvent).trim() || String(event.dateOfEvent).trim().toLowerCase() === 'unknown') errors.push('Date of event is required');
+  if (String(event.eventType || '').toLowerCase().includes('steril') && data && data.carProfileId && isAnimalMarkedSterilized(data.carProfileId)) {
+    errors.push('This animal is already marked as sterilized.');
+  }
   return { valid: errors.length === 0, errors: errors };
 }
